@@ -6,10 +6,10 @@ Source ETA WEN
 
 ## Libaries
 
-Liborbis for 5.05
-JSMN
-INI Parser
-OpenSSL/SHA512
+- Liborbis for 5.05
+- JSMN
+- INI Parser
+- OpenSSL/SHA512
 
 
 # How to Update your CDN
