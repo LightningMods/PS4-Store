@@ -6,10 +6,12 @@ Source ETA WEN
 
 ## Libaries
 
-- Liborbis for 5.05
-- JSMN
-- INI Parser
-- OpenSSL/SHA512
+
+- [PS4SDK](https://github.com/psxdev/ps4sdk/tree/firmware505)
+- [Liborbis for 5.05](https://github.com/orbisdev/liborbis)
+- [JSMN](https://github.com/zserge/jsmn)
+- [INI Parser](https://github.com/mlking/Simple-INI)
+- [OpenSSL/SHA512](https://github.com/openssl/openssl)
 
 
 # How to Update your CDN
