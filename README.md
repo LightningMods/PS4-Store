@@ -11,7 +11,7 @@ Source ETA WEN
 - [Liborbis for 5.05](https://github.com/orbisdev/liborbis)
 - [JSMN](https://github.com/zserge/jsmn)
 - [FTPS4](https://github.com/xerpi/FTPS4)
-- [INI Parser](https://github.com/mlking/Simple-INI)
+- [INI Parser](http://svn.akop.org/filedetails.php?repname=psp&path=%2Ftrunk%2Flibpsp%2Fpl_ini.c&rev=445)
 - [OpenSSL/SHA512](https://github.com/openssl/openssl)
 
 
