@@ -9,10 +9,10 @@ Source ETA WEN
 
 - [PS4SDK](https://github.com/psxdev/ps4sdk/tree/firmware505)
 - [Liborbis for 5.05](https://github.com/orbisdev/liborbis)
-- [JSMN](https://github.com/zserge/jsmn)
-- [FTPS4](https://github.com/xerpi/FTPS4)
+- [JSMN](https://github.com/zserge/jsmn) (MIT)
+- [FTPS4](https://github.com/xerpi/FTPS4) 
 - [INI Parser](http://svn.akop.org/filedetails.php?repname=psp&path=%2Ftrunk%2Flibpsp%2Fpl_ini.c&rev=445)
-- [OpenSSL/SHA512](https://github.com/openssl/openssl)
+- [OpenSSL/SHA512](https://github.com/openssl/openssl) (Apache License 2.0)
 
 
 # How to Update your CDN
