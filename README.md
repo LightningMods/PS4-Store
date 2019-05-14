@@ -7,10 +7,10 @@ Source ETA WEN
 ## Libaries
 
 
-- [PS4SDK](https://github.com/psxdev/ps4sdk/tree/firmware505)
-- [Liborbis for 5.05](https://github.com/orbisdev/liborbis)
+- [PS4SDK](https://github.com/psxdev/ps4sdk/tree/firmware505) (Unlicense License)
+- [Liborbis for 5.05](https://github.com/orbisdev/liborbis) ([Orbis2d is MIT](https://github.com/orbisdev/liborbis/issues/18) LibPNG is libpng license)
 - [JSMN](https://github.com/zserge/jsmn) (MIT)
-- [FTPS4](https://github.com/xerpi/FTPS4) 
+- [FTPS4](https://github.com/xerpi/FTPS4) (MIT)
 - [INI Parser](http://svn.akop.org/filedetails.php?repname=psp&path=%2Ftrunk%2Flibpsp%2Fpl_ini.c&rev=445)
 - [OpenSSL/SHA512](https://github.com/openssl/openssl) (Apache License 2.0)
 
