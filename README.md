@@ -20,7 +20,7 @@
 - [OpenSSL/MD5](https://github.com/openssl/openssl) (Apache License 2.0)
 - [BusyBox](https://elixir.bootlin.com/busybox/0.39/source) (GPLv2)
 - [LibPNG](https://github.com/glennrp/libpng) 
-- [Libz]
+- Libz
 
 ## Refs
 - [ShaderToy](shadertoy.com) 
@@ -29,18 +29,20 @@
 
 # How to Update your CDN
 
-Replace your homebrew.elf , homebrew.elf.sig and remote.md5 with ther Latest from the Release Section of this Github to a folder named "update" on your servers root
+Replace your homebrew.elf , homebrew.elf.sig and remote.md5 with the Latest from the Release Section of this Github to a folder named "update" on your servers root
 
 # Settings
 
 the ini file is either loaded by the app dir or from USB0 when the app is booted
 
+```
 CDN=UR_HOST //OPTIONAL
 Secure_Boot=1 //ONLY allows RSA signed updates from this GH OPTIONAL
 temppath=PATH_WHERE_TO_DOWNLOAD_THE_PKGS; Required
 StoreOnUSB=0 //store pkgs on usb OPTIONAL
 Adavnced_Enabled=1 // need it for advanced settings optional
 CDN_For_Devkit_Modules=CDN_FOR_ONLY_DEVKIT_MODULES //optional
+```
  
 ## App details
 
