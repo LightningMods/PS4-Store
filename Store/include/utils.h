@@ -41,3 +41,4 @@ char* usbpath(void);
 void SaveOptions(StoreOptions* set);
 int getjson(int Pagenumb, char* cdn);
 int LoadOptions(StoreOptions* set);
+int MD5_hash_compare(const char* file1, const char* hash);

@@ -31,6 +31,9 @@
 /* Any 32-bit or wider unsigned integer data type will do */
 typedef unsigned int MD5_u32plus;
  
+#define DIFFERENT_HASH 1
+#define SAME_HASH 0
+
 #define MD5_HASH_LENGTH (16)
 
 typedef struct {
