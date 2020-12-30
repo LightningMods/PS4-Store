@@ -128,7 +128,7 @@ struct ucred {
 void logshit(char* format, ...);
 
 #define SSL_HEAP_SIZE	(304 * 1024)
-#define HTTP_HEAP_SIZE	(48 * 1024)
+#define HTTP_HEAP_SIZE	(1024 * 1024)
 #define NET_HEAP_SIZE	(16 * 1024)
 #define TEST_USER_AGENT	"StoreHAX/GL"
 
