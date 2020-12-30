@@ -33,6 +33,13 @@ int install_ret = -1, http_ret = -1, last_item_dl = 999;
 
 #include "utils.h"
 
+typedef struct retries
+{
+  int failed_dl;
+} retry;
+
+struct retries rrr[100];
+
 bool install_done = false;
 extern int group_c; // panel.c
 
@@ -597,25 +604,39 @@ void GLES2_render_layout(layout_t *layout, int unused)
 #if defined (USE_NFS)
                     char *p = strstr(&tmp[0], "storedata");
                     layout->texture[i] = load_png_asset_into_texture(p);
-#else
-                    // local path is directly token value
-                    if (sceKernelOpen(li->token_d[PICPATH].off, 0x0000, 0) < 0)
-                    {
-                        //give up after 2 tries of downloading
-                        if (last_item_dl != i)
-                        {
-                            loadmsg("Downloading Icons....\n");
+#else               
 
+                    int fd = sceKernelOpen(li->token_d[PICPATH].off, 0x0000, 0);
+                    // local path is directly token value
+                    if (fd < 0)
+                    {   
+                         
+                          if(rrr[i].failed_dl != 1)
+                          {
+                             loadmsg("Downloading Icons....\n");
                             klog("downloading %s from %s", li->token_d[PICPATH].off, li->token_d[IMAGE].off);
-                            dl_from_url(li->token_d[IMAGE].off, li->token_d[PICPATH].off, false);
-                            printf("last_item_dl %i\n", last_item_dl);
+                            if(dl_from_url(li->token_d[IMAGE].off, li->token_d[PICPATH].off, false) != 0)
+                                   rrr[i].failed_dl = 1;
+
+                            klog("last_item_dl %i, %i:%i\n", last_item_dl, i, rrr[i].failed_dl);
                             fprintf(INFO, "texture[%2d] = %3d\n", i, layout->texture[i]);
                             last_item_dl = i;
-                        }            
+                            
+                          }
+                          else if(rrr[i].failed_dl == 1)
+                             layout->texture[i] = load_png_asset_into_texture("/user/appmeta/NPXS39041/icon0.png");
+       
                         
                     }
                     else
+                    {
+                        printf("fd %i\n", fd);
+                        sceKernelClose(fd);
                         layout->texture[i] = load_png_asset_into_texture(&tmp[0]);
+                     }
+
+                      
+                   
 
                   
 
@@ -1421,6 +1442,10 @@ void GLES2_scene_on_pressed_button(int button)
         case ON_MAIN_SCREEN:  http_ret = 0;
         default:              p = icon_panel;      break;
     }
+
+
+for(int i = 0; i < 12; i++)
+  rrr[i].failed_dl = 0;
 
 step1:
     result = p->item_sel;
