@@ -31,6 +31,8 @@
 
 #endif
 
+#include <md5.h>
+
 #include <orbislink.h>
 extern OrbisGlobalConf globalConf;
 
@@ -118,6 +120,8 @@ int initGL_for_the_store(void)
 
 
 
+ if(MD5_hash_compare("/user/app/NPXS39041/pig.sprx", "854a0e5556eeb68c23a97ba024ed2aca") == SAME_HASH && MD5_hash_compare("/user/app/NPXS39041/shacc.sprx", "8a21eb3ed8a6786d3fa1ebb1dcbb8ed0") == SAME_HASH)
+ {
     globalConf.confPad = orbisPadGetConf();
 
     // customs
@@ -141,7 +145,9 @@ int initGL_for_the_store(void)
     }
 
     sceMsgDialogTerminate();
-
+   }
+    else
+      msgok(FATAL, "SPRX ARE NOT THE SAME HASH\n ABORTING");
     // all fine.
     return 0;
 }

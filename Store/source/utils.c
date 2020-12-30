@@ -1,6 +1,7 @@
 
 #include "utils.h"
 #include <pl_ini.h>
+#include <md5.h>
 
 
 int Lastlogcheck = 0;
@@ -34,6 +35,42 @@ char* usbpath()
     return "";
 }
 
+int MD5_hash_compare(const char* file1, const char* hash)
+{
+	unsigned char c[MD5_HASH_LENGTH];
+	int i;
+	FILE* f1 = fopen(file1, "rb");
+	MD5_CTX mdContext;
+
+	int bytes = 0;
+	unsigned char data[1024];
+
+	MD5_Init(&mdContext);
+	while ((bytes = fread(data, 1, 1024, f1)) != 0)
+		MD5_Update(&mdContext, data, bytes);
+	MD5_Final(c, &mdContext);
+
+
+	char md5_string[33] = {0};
+
+	for(int i = 0; i < 16; ++i) {
+	    sprintf(&md5_string[i*2], "%02x", (unsigned int)c[i]);
+	}
+        klog("FILE HASH: %s\n", md5_string);
+	md5_string[32] = 0;
+
+	 if (strcmp(md5_string, hash) != 0) {
+		return DIFFERENT_HASH;
+	 }
+
+
+        klog("Input HASH: %s\n", hash);
+	
+
+
+	return SAME_HASH;
+}
+
 int LoadOptions(StoreOptions* Settings)
 {
     char *buff = (char *)malloc(256 * sizeof(char)); 
@@ -49,6 +86,11 @@ int LoadOptions(StoreOptions* Settings)
 
     if (sceKernelOpen(buff, 0x0000, 0000) < 0){
       klog("No INI on USB\n");
+        if (sceKernelOpen("/user/app/NPXS39041/settings.ini", 0x0000, 0000) > 0)
+           Settings->INIPath = "/user/app/NPXS39041/settings.ini";
+        else
+          return -1;
+            
     }
     else {
       pl_ini_load(&file, buff);
@@ -74,7 +116,7 @@ int LoadOptions(StoreOptions* Settings)
      if (strstr(usbpath(), "/mnt/usb")){
         Settings->USBPath = usbpath();
     }
-    pl_ini_get_string(&file, "Settings", "CDN", "https://pkg-zone.com", CDNBuf, 256);
+    pl_ini_get_string(&file, "Settings", "CDN", "http://api.pkg-zone.com", CDNBuf, 256);
     Settings->StoreCDN = CDNBuf;
     pl_ini_get_string(&file, "Settings", "temppath", "/user/app/", temppath, 256);
     Settings->temppath = temppath;
@@ -354,7 +396,6 @@ int loadmsg(char* format, ...)
 
     while (1) {
         stat = sceMsgDialogUpdateStatus();
-        klog("s = %i", stat);
         if (stat == ORBIS_COMMON_DIALOG_STATUS_RUNNING) {
             break;
         }
@@ -388,6 +429,8 @@ void klog(const char *format, ...)
             sceKernelWrite(fd, buff, strlen(buff));
             sceKernelClose(fd);
         }
+
+
     }
     else
         printf("DEBUG: input is too large!\n");
