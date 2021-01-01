@@ -1697,6 +1697,24 @@ wen_found_hit:
             else
             if(menu_pos.z == ON_MAIN_SCREEN)
             {
+                
+                // we have an auxiliary serch result item list to show...
+                if(aux)
+                {
+                    int g_idx = aux[ icon_panel->curr_item +1 /*skip first*/].len;
+                    // get vector from selected item index
+                    ivec2 x = idx_to_pos_xy( g_idx, icon_panel->fieldsize );
+                    // update current selection in icon_panel
+                    icon_panel->curr_item = x.x;
+                    icon_panel->item_sel  = (ivec2) { x.x,
+                                                      x.y % icon_panel->fieldsize.y };
+                    icon_panel->page_sel  = (ivec2) { x.y / icon_panel->fieldsize.y,
+                                                      icon_panel->item_c
+                                                    / (icon_panel->fieldsize.x * icon_panel->fieldsize.y) };
+                    icon_panel->refresh = 1;
+                    // we just pressed X for action, so drop the auxiliary list!
+                    aux = NULL;
+                }
 
 switch_to_download:
 
