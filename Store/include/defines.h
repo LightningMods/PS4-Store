@@ -190,10 +190,11 @@ enum views
     ON_LEFT_PANEL,
     ON_MAIN_SCREEN, // 0
     ON_SUBMENU,     // 1 - Queue
-    ON_SUBMENU3,    // Ready
-    ON_SUBMENU_2,   // 2 - Groups
-    ON_ITEM_PAGE,   // 3 - aux/temp
-    ON_EXTRA_PAGE   // 4 - pixelshader
+    ON_SUBMENU3,    // 2 - Ready to install
+    ON_SUBMENU_2,   // 3 - Groups
+    ON_ITEM_PAGE,   // 4 - aux/temp
+    ON_EXTRA_PAGE,  // 5 - pixelshader
+    ON_SETTINGS     // 6
 };
 
 
@@ -236,6 +237,7 @@ void pixelshader_init( int width, int height );
 void pixelshader_fini( void );
 
 void ORBIS_RenderSubMenu(int num);
+void GLES2_render_submenu_text_v2( vertex_buffer_t *vbo, vec3 *offset );
 
 void GLES2_init_submenu( void );
 void GLES2_render_submenu_text( int num );
@@ -305,8 +307,10 @@ void destroy_item_t(item_idx_t **p);
 int df(char *out, const char *mountPoint);
 
 int get_item_index(layout_t *l);
+// from GLES2_scene_v2.c
+layout_t * GLES2_layout_init(int req_item_count);
 
-/// pthreads
+/// pthreads used in GLES2_q.c
 
 typedef enum pt_status
 {

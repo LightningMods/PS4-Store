@@ -12,8 +12,8 @@
 #include "defines.h"
 
 #include "json.h"
-
 #include "icons_shaders.h"
+
 /*
     we setup two SL programs:
     0. use default color from texture
@@ -36,11 +36,9 @@ static GLuint curr_Program;  // the current one
 #define BUFFER_OFFSET(i) ((void*)(i))
 
 
-// my_Frect position(.xy) and size (.zw)
-static vec4 rects[NUM_OF_TEXTURES];
 
 // the png we apply glowing effect by switching shader
-extern int    selected_icon;
+//extern int    selected_icon;
 extern ivec4  menu_pos;
 
 // shaders locations
@@ -51,6 +49,9 @@ static GLint u_texture_unit_location,
 
        vec2 resolution;  // (shared and constant!)
 
+#if 0
+// my_Frect position(.xy) and size (.zw)
+static vec4 rects[NUM_OF_TEXTURES];
 // fill all our "rects" info with normalized coordinates
 static void setup_texture_position(int i, vec2 pos, const float scale_f)
 {
@@ -70,22 +71,11 @@ static void setup_texture_position(int i, vec2 pos, const float scale_f)
         rects[i].zw = px_pos_to_normalized(&s);
     }
 }
+#endif
 
-//https://github.com/learnopengles/airhockey/commit/228ce050da304258feca8d82690341cb50c27532
-//OpenGLES2 handlers : init , final , update , render , touch-input
 void on_GLES2_Init_icons(int view_w, int view_h)
 {
-    resolution = (vec2){ view_w, view_h }; // setup resolution for next setup_texture_position()
-
-    for(int i = 0; i < NUM_OF_TEXTURES; i++)
-    {
-//        texture[i] = load_png_asset_into_texture(pngs[i]);
-//        if(!texture[i])
-//            debugNetPrintf(DEBUG, "load_png_asset_into_texture '%s' ret: %d\n", pngs[i], texture[i]);
-
-        // fill Frects with positions and sizes
-        setup_texture_position( i, (vec2){ i *100, 480 /*ATTR_ORBISGL_HEIGHT*/ /2 }, 0.25 /* scale_f */);
-    }
+    resolution = (vec2){ view_w, view_h };
 
     for(int i = 0; i < NUM_OF_PROGRAMS; i++)
     {
@@ -95,7 +85,7 @@ void on_GLES2_Init_icons(int view_w, int view_h)
         #else
             CreateProgramFromBinary(i);
         #endif
-        debugNetPrintf(DEBUG, "glsl_Program[%d]: %u\n", i, glsl_Program[i]);
+        fprintf(DEBUG, "glsl_Program[%d]: %u\n", i, glsl_Program[i]);
         // make program the current one
         curr_Program = glsl_Program[i];
 
@@ -121,14 +111,11 @@ void on_GLES2_Final(void)
 
 void on_GLES2_Update(double time)
 {
-    float t = (float)time;
     for(int i = 0; i < NUM_OF_PROGRAMS; ++i)
     {
         glUseProgram(glsl_Program[i]);
         // write the value to the shaders
-//printf("%s pro:%d glUniform1f before.\n", __FUNCTION__, i);
-        glUniform1f(glGetUniformLocation(glsl_Program[i], "u_time"), t);
-//printf("%s pro:%d glUniform1f after.\n", __FUNCTION__, i);
+        glUniform1f(glGetUniformLocation(glsl_Program[i], "u_time"), time);
     }
 //printf("time:%.6f\n", time);
 }
@@ -158,7 +145,6 @@ void on_GLES2_Render_icon(GLuint texture, int num, vec4 *frect) // which texture
     glUniform1i    (u_texture_unit_location, num);  // tell to shader
 
     // setup positions
-    //const vec4 *rect = &rects[num];
     const vec4 *rect = frect;
 /*
     vec4 r;// = (vec4) { .2, .2, .3, .3 };
@@ -201,51 +187,3 @@ void on_GLES2_Render_icon(GLuint texture, int num, vec4 *frect) // which texture
     // we already flip/swap
 }
 
-// UI: pngs
-static vec4 selection_box;
-static int  to_ani = 0;
-void on_GLES2_Render_icons(page_info_t *row)
-{
-    if(!row) return;
-
-    vec4 r;
-    vec2 p, s;
-    for(int i = 0; i < NUM_OF_TEXTURES; i++)
-    {
-#if 1
-       // position, size in px
-        p = row->item[i].origin;
-        s = row->item[i].frect.zw;
-        // turn size into the second point
-        s += p;
-        // compute the normalized frect
-        r.xy = px_pos_to_normalized(&p);
-        r.zw = px_pos_to_normalized(&s);
-        // save the currently selected frect!
-        if(i == selected_icon
-        &&(((row->page_num -1) %2) == menu_pos.y %2)
-        ) selection_box = r;
-        // render texture using normalized frect
-        on_GLES2_Render_icon(row->item[i].texture, i, &r);
-#else
-        // take px coordinates
-        p = row->item[i].origin;
-        s = p
-          + (vec2) ( 128. );
-        // do something
-        s *= sin(to_ani++);
-        // compute the normalized frect
-        r.xy = px_pos_to_normalized(&p);
-        r.zw = px_pos_to_normalized(&s);
-        // update the item frect and draw
-        row->item[i].frect = r;
-        on_GLES2_Render_icon(row->item[i].texture, i, &row->item[i].frect);
-#endif
-    }
-}
-
-void on_GLES2_Render_box(vec4 *frect)
-{
-    vec4 white = (vec4)( 1. );
-    ORBIS_RenderDrawBox(USE_UTIME, &white, &selection_box);
-}

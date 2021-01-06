@@ -3,6 +3,8 @@
 #include <pl_ini.h>
 #include <md5.h>
 
+StoreOptions set,
+            *get;
 
 int Lastlogcheck = 0;
 static const char     *sizes[] = { "EiB", "PiB", "TiB", "GiB", "MiB", "KiB", "B" };
@@ -14,11 +16,11 @@ char* usbpath()
     int usb;
     static char usbbuf[100];
     usbbuf[0] = '\0';
-    for (int x = 0; x <= 7; x++)
+    for(int x = 0; x <= 7; x++)
     {
         snprintf(usbbuf, sizeof(usbbuf), "/mnt/usb%i/.dirtest", x);
         usb = sceKernelOpen(usbbuf, O_WRONLY | O_CREAT | O_TRUNC, 0777);
-        if (usb > 0)
+        if(usb > 0)
         {
             sceKernelClose(usb);
 
@@ -26,10 +28,8 @@ char* usbpath()
 
             klog("found usb = %s\n", usbbuf);
             return usbbuf;
-
         }
     }
-
     klog("FOUND NO USB\n");
 
     return "";
@@ -37,101 +37,97 @@ char* usbpath()
 
 int MD5_hash_compare(const char* file1, const char* hash)
 {
-	unsigned char c[MD5_HASH_LENGTH];
-	int i;
-	FILE* f1 = fopen(file1, "rb");
-	MD5_CTX mdContext;
+    unsigned char c[MD5_HASH_LENGTH];
+    int i;
+    FILE* f1 = fopen(file1, "rb");
+    MD5_CTX mdContext;
 
-	int bytes = 0;
-	unsigned char data[1024];
+    int bytes = 0;
+    unsigned char data[1024];
 
-	MD5_Init(&mdContext);
-	while ((bytes = fread(data, 1, 1024, f1)) != 0)
-		MD5_Update(&mdContext, data, bytes);
-	MD5_Final(c, &mdContext);
+    MD5_Init(&mdContext);
+    while ((bytes = fread(data, 1, 1024, f1)) != 0)
+        MD5_Update(&mdContext, data, bytes);
+    MD5_Final(c, &mdContext);
 
+    char md5_string[33] = {0};
 
-	char md5_string[33] = {0};
-
-	for(int i = 0; i < 16; ++i) {
-	    sprintf(&md5_string[i*2], "%02x", (unsigned int)c[i]);
-	}
+    for(int i = 0; i < 16; ++i) {
+        sprintf(&md5_string[i*2], "%02x", (unsigned int)c[i]);
+    }
         klog("FILE HASH: %s\n", md5_string);
-	md5_string[32] = 0;
+    md5_string[32] = 0;
 
-	 if (strcmp(md5_string, hash) != 0) {
-		return DIFFERENT_HASH;
-	 }
+    if (strcmp(md5_string, hash) != 0) {
+        return DIFFERENT_HASH;
+    }
 
+    klog("Input HASH: %s\n", hash);
 
-        klog("Input HASH: %s\n", hash);
-	
-
-
-	return SAME_HASH;
+    return SAME_HASH;
 }
 
-int LoadOptions(StoreOptions* Settings)
+int LoadOptions(StoreOptions *set)
 {
-    char *buff = (char *)malloc(256 * sizeof(char)); 
-    char *CDNBuf = (char *)malloc(256 * sizeof(char)); 
-    char *temppath = (char *)malloc(256 * sizeof(char)); 
-
+    for(int i=0; i< NUM_OF_STRINGS; i++)
+    {   // dynalloc and zerofill
+        set->opt[ i ] = calloc(256, sizeof(char));
+    }
 
     /* Initialize INI structure */
     pl_ini_file file;
+    char buff[256];
+    if (strstr(usbpath(), "/mnt/usb"))
+    {
+        snprintf(buff, 256, "%s/settings.ini", usbpath());
 
-  if (strstr(usbpath(), "/mnt/usb")) {
-    snprintf(buff, 256, "%s/settings.ini", usbpath());
-
-    if (sceKernelOpen(buff, 0x0000, 0000) < 0){
-      klog("No INI on USB\n");
-        if (sceKernelOpen("/user/app/NPXS39041/settings.ini", 0x0000, 0000) > 0)
-           Settings->INIPath = "/user/app/NPXS39041/settings.ini";
-        else
-          return -1;
-            
+        if (sceKernelOpen(buff, 0x0000, 0000) < 0)
+        {
+            klog("No INI on USB\n");
+            if (sceKernelOpen("/user/app/NPXS39041/settings.ini", 0x0000, 0000) > 0)
+                sprintf(set->opt[INI_PATH], "%s", "/user/app/NPXS39041/settings.ini");
+            else
+                return -1;
+        } else {
+            pl_ini_load(&file, buff);
+            klog("Loading ini from USB\n");
+            sprintf(set->opt[INI_PATH], "%s", buff);
+        }
     }
-    else {
-      pl_ini_load(&file, buff);
-      klog("Loading ini from USB\n");
-      Settings->INIPath = buff;
+    else
+    if (sceKernelOpen("/user/app/NPXS39041/settings.ini", 0x0000, 0000) < 0)
+    {
+        klog("CANT FIND INI\n"); return -1;
+    } else {
+        pl_ini_load( &file, "/user/app/NPXS39041/settings.ini");
+        klog("Loading ini from APP DIR\n");
+        sprintf(set->opt[INI_PATH], "%s", "/user/app/NPXS39041/settings.ini");
     }
-
-  } else if (sceKernelOpen("/user/app/NPXS39041/settings.ini", 0x0000, 0000) < 0) {
-    klog("CANT FIND INI\n");
-    return -1;
-  } else {
-    pl_ini_load( &file, "/user/app/NPXS39041/settings.ini");
-    klog("Loading ini from APP DIR\n");
-    Settings->INIPath = "/user/app/NPXS39041/settings.ini";
-
-  }
 
     /* Read the file */
-    pl_ini_load(&file, Settings->INIPath);
-
-
+    pl_ini_load(&file, set->opt[INI_PATH]);
     /* Load values */
-     if (strstr(usbpath(), "/mnt/usb")){
-        Settings->USBPath = usbpath();
-    }
-    pl_ini_get_string(&file, "Settings", "CDN", "http://api.pkg-zone.com", CDNBuf, 256);
-    Settings->StoreCDN = CDNBuf;
-    pl_ini_get_string(&file, "Settings", "temppath", "/user/app/", temppath, 256);
-    Settings->temppath = temppath;
-    Settings->StoreOnUSB = pl_ini_get_int(&file, "Settings", "StoreOnUSB", 0);
+    if(strstr(usbpath(), "/mnt/usb"))
+        sprintf(set->opt[USB_PATH], "%s", usbpath());
 
+    pl_ini_get_string(&file, "Settings", "CDN",      "http://api.pkg-zone.com",
+                                 set->opt[CDN_URL],  256);
+    pl_ini_get_string(&file, "Settings", "temppath", "/user/app/",
+                                 set->opt[TMP_PATH], 256);
+    pl_ini_get_string(&file, "Settings", "TTF_Font", "/system_ex/app/NPXS20113/bdjstack/lib/fonts/SCE-PS3-RD-R-LATIN.TTF",
+                                 set->opt[FNT_PATH], 256);
+    // get an int
+    set->StoreOnUSB = pl_ini_get_int(&file, "Settings", "StoreOnUSB", 0);
 
-    klog("Settings.INIPath: %s\n", Settings->INIPath);
-    klog("Settings.USBPath: %s\n", Settings->USBPath);
-    klog("Settings.temppath: %s\n", Settings->temppath);
-    klog("Settings.StoreOnUSB: %i\n",Settings->StoreOnUSB);
-    klog("Settings.StoreCDN: %s\n",Settings->StoreCDN);
+    klog("set->opt[INI_PATH]: %s\n", set->opt[INI_PATH]);
+    klog("set->opt[USB_PATH]: %s\n", set->opt[USB_PATH]);
+    klog("set->opt[FNT_PATH]: %s\n", set->opt[FNT_PATH]);
+    klog("set->opt[TMP_PATH]: %s\n", set->opt[TMP_PATH]);
+    klog("set->opt[CDN_URL ]: %s\n", set->opt[CDN_URL]);
+    klog("set->StoreOnUSB   : %i\n", set->StoreOnUSB);
 
     /* Clean up */
     pl_ini_destroy(&file);
-
 
     return 1;
 }
@@ -154,32 +150,41 @@ char* cutoff(const char* str, int from, int to)
     return begin;
 }
 
-void SaveOptions(StoreOptions* set)
+int SaveOptions(StoreOptions *set)
 {
-
-
     /* Initialize INI structure */
     pl_ini_file file;
+    int ret = 0;
+
     /* Read the file */
-    pl_ini_load(&file, set->INIPath);
+    if (ret = sceKernelOpen(set->opt[INI_PATH], 0x000, 0x0000) < 0) {
+        pl_ini_create(&file);
+        klog("INI NOT AVAIL Creating... \n");
+    }
+    else
+       pl_ini_load(&file, set->opt[INI_PATH]);
 
+    klog("set->opt[INI_PATH] ret %x: %s\n", ret, set->opt[INI_PATH]);
 
-    klog("Settings.INIPath: %s\n", set->INIPath);
-    klog("Settings.USBPath: %s\n", set->USBPath);
-    klog("Settings.temppath: %s\n", set->temppath);
-    klog("Settings.StoreOnUSB: %i\n", set->StoreOnUSB);
-    klog("Settings.StoreCDN: %s\n", set->StoreCDN);
+    klog("set->opt[USB_PATH]: %s\n", set->opt[USB_PATH]);
+    klog("set->opt[TMP_PATH]: %s\n", set->opt[TMP_PATH]);
+    klog("set->opt[FNT_PATH]: %.20s...\n", set->opt[FNT_PATH]);
+    klog("set->opt[CDN_URL ]: %s\n", set->opt[CDN_URL ]);
+    klog("set->StoreOnUSB   : %i\n", set->StoreOnUSB);
 
     /* Load values */
-    pl_ini_set_string(&file, "Settings", "CDN", set->StoreCDN);
-    pl_ini_set_string(&file, "Settings", "temppath", set->temppath);
-    pl_ini_set_int(&file, "Settings", "StoreOnUSB",set->StoreOnUSB);
+    pl_ini_set_string(&file, "Settings", "CDN",        set->opt[CDN_URL ]);
+    pl_ini_set_string(&file, "Settings", "temppath",   set->opt[TMP_PATH]);
+    pl_ini_set_string(&file, "Settings", "TTF_Font",   set->opt[FNT_PATH]);
+    pl_ini_set_int   (&file, "Settings", "StoreOnUSB", set->StoreOnUSB);
 
-    pl_ini_save(&file, set->INIPath);
+    ret = pl_ini_save(&file, set->opt[INI_PATH]);
+    chmod(set->opt[INI_PATH], 0777);
 
     /* Clean up */
     pl_ini_destroy(&file);
 
+    return ret;
 }
 
 
@@ -444,7 +449,7 @@ int getjson(int Pagenumb, char* cdn)
 
     snprintf(buff, 300, "%s/homebrew-page%i.json", cdn, Pagenumb);
     snprintf(destbuf, 300, "/user/app/NPXS39041/homebrew-page%i.json", Pagenumb);
-    printf(buff);
+    printf("%s", buff);
 
     return dl_from_url(buff, destbuf, false);
 }

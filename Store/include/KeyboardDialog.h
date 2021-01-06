@@ -4,4 +4,4 @@
 #include <stdlib.h>
 #include <string.h>
 
-char* StoreKeyboard();
+char *StoreKeyboard(const char *Title, char *initialTextBuffer);

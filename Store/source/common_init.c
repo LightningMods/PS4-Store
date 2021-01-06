@@ -31,6 +31,7 @@
 
 #endif
 
+#include <Header.h>
 #include <md5.h>
 
 #include <orbislink.h>
@@ -41,8 +42,37 @@ int s_shcomp_module = -1;
 int JsonErr = 0,
     page;
 
-StoreOptions set,
-            *get;
+const unsigned char completeVersion[] = {
+  VERSION_MAJOR_INIT,
+  '.',
+  VERSION_MINOR_INIT,
+  '-',
+  'V',
+  '-',
+  BUILD_YEAR_CH0,
+  BUILD_YEAR_CH1,
+  BUILD_YEAR_CH2,
+  BUILD_YEAR_CH3,
+  '-',
+  BUILD_MONTH_CH0,
+  BUILD_MONTH_CH1,
+  '-',
+  BUILD_DAY_CH0,
+  BUILD_DAY_CH1,
+  'T',
+  BUILD_HOUR_CH0,
+  BUILD_HOUR_CH1,
+  ':',
+  BUILD_MIN_CH0,
+  BUILD_MIN_CH1,
+  ':',
+  BUILD_SEC_CH0,
+  BUILD_SEC_CH1,
+  '\0'
+};
+
+extern StoreOptions set,
+                   *get;
 
 /* XXX: patches below are given for Piglet module from 4.74 Devkit PUP */
 static void pgl_patches_cb(void* arg, uint8_t* base, uint64_t size)
@@ -66,7 +96,11 @@ int initGL_for_the_store(void)
 {
     int ret = 0;
 
-    get = &set; // address main get StoreOptions pointer
+   klog("------------------------ Store[GL] Compiled Time: %s @ %s  -------------------------\n", __DATE__, __TIME__);
+   klog(" --------------------------------  STORE Version: %s  -----------------\n", completeVersion);
+   klog("----------------------------------------------- -------------------------\n");
+
+    get = &set;
 
     // internals: net, user_service, system_service
     ret = loadModulesVanilla();
@@ -74,10 +108,6 @@ int initGL_for_the_store(void)
     // pad
     ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_PAD);
     if(ret) return -1;
-
-
-
-
     //Ime
     ret = sceSysmoduleLoadModule(ORBIS_SYSMODULE_IME_DIALOG);
     if(ret) return -1;
@@ -85,69 +115,65 @@ int initGL_for_the_store(void)
     ret = sceSysmoduleLoadModule(ORBIS_SYSMODULE_MESSAGE_DIALOG);
     if(ret) return -1;
 
+    ret =  sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_NETCTL);
+    if(ret) return -1;
 
-        ret =  sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_NETCTL);
-        if(ret) return -1;
-	ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_NET);
-        if(ret) return -1;
-	
-	ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_HTTP);
-        if(ret) return -1;
+    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_NET);
+    if(ret) return -1;
+    
+    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_HTTP);
+    if(ret) return -1;
 
-	ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_SSL);
-        if(ret) return -1;
+    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_SSL);
+    if(ret) return -1;
 
-
-	ret = sceSysmoduleLoadModuleInternal(0x80000018);
-        if(ret) return -1;
-	
-	ret = sceSysmoduleLoadModuleInternal(0x80000026);  // 0x80000026
-        if(ret) return -1;
-	
-	ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_BGFT);  // 0x80000026
-        if(ret) return -1;
-	
-	ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_APPINSTUTIL);  // 0x80000026 0x80000037
-        if(ret) return -1;
-	
-
+    ret = sceSysmoduleLoadModuleInternal(0x80000018);
+    if(ret) return -1;
+    
+    ret = sceSysmoduleLoadModuleInternal(0x80000026);  // 0x80000026
+    if(ret) return -1;
+    
+    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_BGFT);  // 0x80000026
+    if(ret) return -1;
+    
+    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_APPINSTUTIL);  // 0x80000026 0x80000037
+    if(ret) return -1;
+    
     sceCommonDialogInitialize();
     sceMsgDialogInitialize();
-
 
     ret = orbisPadInit();
     if(ret != 1) return -2;
 
 
-
- if(MD5_hash_compare("/user/app/NPXS39041/pig.sprx", "854a0e5556eeb68c23a97ba024ed2aca") == SAME_HASH && MD5_hash_compare("/user/app/NPXS39041/shacc.sprx", "8a21eb3ed8a6786d3fa1ebb1dcbb8ed0") == SAME_HASH)
- {
-    globalConf.confPad = orbisPadGetConf();
-
-    // customs
-    s_piglet_module = sceKernelLoadStartModule("/user/app/NPXS39041/pig.sprx",   0, NULL, 0, NULL, NULL);
-    s_shcomp_module = sceKernelLoadStartModule("/user/app/NPXS39041/shacc.sprx", 0, NULL, 0, NULL, NULL);
-
-    if(! patch_module("pig.sprx", &pgl_patches_cb, NULL, /*debugnetlevel*/3)) return -3;
-
-
-     ret = LoadOptions(get);
-     if(!ret)
-         msgok(2, "Could NOT find/open the INI File");
-
-    loadmsg("Downloading and Caching Website files....\n");
-
-    page = 1; //first 
-    while(JsonErr == 0)
+    if(MD5_hash_compare("/user/app/NPXS39041/pig.sprx", "854a0e5556eeb68c23a97ba024ed2aca") == SAME_HASH && MD5_hash_compare("/user/app/NPXS39041/shacc.sprx", "8a21eb3ed8a6786d3fa1ebb1dcbb8ed0") == SAME_HASH)
     {
-        JsonErr = getjson(page, get->StoreCDN);
-        page++;
-    }
+        globalConf.confPad = orbisPadGetConf();
 
-    sceMsgDialogTerminate();
-   }
+        // customs
+        s_piglet_module = sceKernelLoadStartModule("/user/app/NPXS39041/pig.sprx",   0, NULL, 0, NULL, NULL);
+        s_shcomp_module = sceKernelLoadStartModule("/user/app/NPXS39041/shacc.sprx", 0, NULL, 0, NULL, NULL);
+
+        if(! patch_module("pig.sprx", &pgl_patches_cb, NULL, /*debugnetlevel*/3)) return -3;
+
+        ret = LoadOptions(get);
+        if(!ret)
+            msgok(2, "Could NOT find/open the INI File");
+
+        loadmsg("Downloading and Caching Website files....\n");
+
+        page = 1; //first 
+        while(JsonErr == 0)
+        {
+            JsonErr = getjson(page, get->opt[CDN_URL]);
+            page++;
+        }
+
+        sceMsgDialogTerminate();
+    }
     else
-      msgok(FATAL, "SPRX ARE NOT THE SAME HASH\n ABORTING");
+        msgok(FATAL, "SPRX ARE NOT THE SAME HASH\n ABORTING");
+
     // all fine.
     return 0;
 }

@@ -1,16 +1,11 @@
-#include "jsmn.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "defines.h"
 
+#include "jsmn.h"
 #include "json.h"
-
-
-extern int    selected_icon;
-extern GLuint shader;
-extern mat4   model, view, projection;
 
 extern texture_atlas_t *atlas;
 
@@ -27,8 +22,72 @@ int jsoneq(const char *json, jsmntok_t *tok, const char *s) {
   return -1;
 }
 
+// recreate fonts glyphs atlas
+void refresh_atlas(void)
+{
+   // fprintf(INFO, "* atlas to gpu *\n");
+    if(1)
+    {   /* discard old texture, we eventually added glyphs! */
+        if(atlas->id) glDeleteTextures(1, &atlas->id), atlas->id = 0;
 
-unsigned char *http_fetch_from(const char *url);
+        /* re-create texture and upload atlas into gpu memory */
+        glGenTextures  ( 1, &atlas->id );
+        glBindTexture  ( GL_TEXTURE_2D, atlas->id );
+        glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,     GL_CLAMP_TO_EDGE );
+        glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,     GL_CLAMP_TO_EDGE );
+        glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+        glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
+        glTexImage2D   ( GL_TEXTURE_2D, 0, GL_ALPHA, atlas->width, atlas->height,
+                                        0, GL_ALPHA, GL_UNSIGNED_BYTE, atlas->data );
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+}
+
+int count_availables_json(void)
+{
+    int   count = 0;
+    char  json_file[128];
+    void *p;
+
+    while(1)
+    {   // json page_num starts from 1 !!!
+        sprintf(&json_file[0], "/user/app/NPXS39041/homebrew-page%d.json", count +1);
+        // read the file
+#if defined (USE_NFS)
+        #warning "we use nfs!"
+//        p = &json_file[20];
+//        fprintf(INFO, "open:%s\n", p);
+        // move pointer to address nfs share
+        p = (void*)orbisNfsGetFileContent(&json_file[20]);
+#else
+        p = (void*)orbisFileGetFileContent(&json_file[0]);
+#endif
+        // check
+        if(p) free(p), p = NULL;  else break;
+        // passed, increase num of available pages
+        count++;
+    }
+    return count;
+}
+
+/* old UI code now useless, for reference */
+
+#if 0
+extern int    selected_icon;
+extern GLuint shader;
+extern mat4   model, view, projection;
+
+/*
+    three shared fonts
+*/
+texture_font_t *stock_font = NULL;
+texture_font_t *title_font = NULL;
+texture_font_t *curr_font  = NULL;
+
+extern int num_of_pages;
+
+// freetype-gl pass last composed Text_Length in pixel, we use to align text!
+extern float tl;
 
 // index (write) all used_tokens
 static int json_index_used_tokens(page_info_t *page)
@@ -74,10 +133,6 @@ static int json_index_used_tokens(page_info_t *page)
 }
 
 
-// freetype-gl pass last composed Text_Length in pixel, we use to align text!
-extern float tl;
-
-//static page_info_t *page = NULL;
 
 void destroy_page(page_info_t *page)
 {
@@ -93,68 +148,6 @@ void destroy_page(page_info_t *page)
     vertex_buffer_delete(page->vbo), page->vbo = NULL;
 
     if(page) free(page), page = NULL;
-}
-
-// dummmy, to catch my GL bug
-void refresh_atlas(void)
-{
-   // fprintf(INFO, "* atlas to gpu *\n");
-  //glUseProgram   ( shader );
-    // setup state
-    //glActiveTexture( GL_TEXTURE0 );
-
-    if(1)//(page_num > num_of_pages)
-    {
-        //printf("to gpu!\n");
-        /* discard old texture, we eventually added glyphs! */
-        if(atlas->id) glDeleteTextures(1, &atlas->id), atlas->id = 0;
-
-        /* re-create texture and upload atlas into gpu memory */
-        glGenTextures  ( 1, &atlas->id );
-        glBindTexture  ( GL_TEXTURE_2D, atlas->id );
-        glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,     GL_CLAMP_TO_EDGE );
-        glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,     GL_CLAMP_TO_EDGE );
-        glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-        glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
-        glTexImage2D   ( GL_TEXTURE_2D, 0, GL_ALPHA, atlas->width, atlas->height,
-                                        0, GL_ALPHA, GL_UNSIGNED_BYTE, atlas->data );
-        glBindTexture(GL_TEXTURE_2D, 0);
-    }
-}
-
-texture_font_t *stock_font = NULL;
-texture_font_t *title_font = NULL;
-texture_font_t *curr_font  = NULL;
-/*
-
-*/
-extern int num_of_pages;
-
-int count_availables_json(void)
-{
-    int   count = 0;
-    char  json_file[128];
-    void *p;
-
-    while(1)
-    {   // json page_num starts from 1 !!!
-        sprintf(&json_file[0], "/user/app/NPXS39041/homebrew-page%d.json", count +1);
-        // read the file
-#if defined (USE_NFS)
-        #warning "we use nfs!"
-//        p = &json_file[20];
-//        fprintf(INFO, "open:%s\n", p);
-        // move pointer to address nfs share
-        p = (void*)orbisNfsGetFileContent(&json_file[20]);
-#else
-        p = (void*)orbisFileGetFileContent(&json_file[0]);
-#endif
-        // check
-        if(p) free(p), p = NULL;  else break;
-        // passed, increase num of available pages
-        count++;   
-    }
-    return count;
 }
 
 // this draws the page layout:
@@ -180,12 +173,12 @@ page_info_t *compose_page(int page_num)
 
     page->vbo   = vertex_buffer_new( "vertex:3f,tex_coord:2f,color:4f" );
 
-    int valid_t = json_index_used_tokens(page);
+    int valid_tokens   = json_index_used_tokens(page);
     // json describe max 8 items per page
-    int ret     = valid_t /NUM_OF_USER_TOKENS;
-
+    page->num_of_items = valid_tokens /NUM_OF_USER_TOKENS;
     // if < 8 realloc page
-    //printf("%d\n", ret);
+    printf("json %d holds %d items\n", page_num, page->num_of_items);
+
     if(!stock_font)
         stock_font = texture_font_new_from_memory(atlas, 17, _hostapp_fonts_zrnic_rg_ttf, 
                                                              _hostapp_fonts_zrnic_rg_ttf_len);
@@ -194,7 +187,7 @@ page_info_t *compose_page(int page_num)
                                                              _hostapp_fonts_zrnic_rg_ttf_len);
     // now prepare all the texts textures, use indexed json_data
     int count;
-    for(int i = 0; i < ret; i++)
+    for(int i = 0; i < page->num_of_items; i++)
     {
         // compute item origin position, in px
         page->item[i].origin = (vec2)
@@ -563,7 +556,7 @@ void GLES2_RenderPageForItem(page_item_t *item)
 //          case PV:          sprintf(&lbl[0], "Name: "); break;
             case RELEASEDATE: sprintf(&lbl[0], "Released: ");
                  pen = (vec2) { 480,  500 - TEXT_VSTEP *4 };
-                break;
+                 break;
             default: continue; // skip unknown names
         }
         /* append to VBO */
@@ -606,3 +599,4 @@ void GLES2_RenderPageForItem(page_item_t *item)
     if(!item->in_atlas)
         refresh_atlas(), item->in_atlas = 1;
 }
+#endif

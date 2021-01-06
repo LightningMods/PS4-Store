@@ -10,18 +10,18 @@ int (*jailbreak_me)(void);
 
 int64_t sys_dynlib_load_prx(char* prxPath, int* moduleID)
 {
-	return (int64_t)syscall4(594, prxPath, 0, moduleID, 0);
+    return (int64_t)syscall4(594, prxPath, 0, moduleID, 0);
 }
 
 int64_t sys_dynlib_unload_prx(int64_t prxID)
 {
-	return (int64_t)syscall1(595, (void*)prxID);
+    return (int64_t)syscall1(595, (void*)prxID);
 }
 
 
 int64_t sys_dynlib_dlsym(int64_t moduleHandle, const char* functionName, void *destFuncOffset)
 {
-	return (int64_t)syscall3(591, (void*)moduleHandle, (void*)functionName, destFuncOffset);
+    return (int64_t)syscall3(591, (void*)moduleHandle, (void*)functionName, destFuncOffset);
 }
 
 
@@ -143,19 +143,13 @@ ly : 0-255 u-d
         if(orbisPadGetButtonPressed(ORBISPAD_R1))
         {
             fprintf(INFO, "R1 pressed\n");
-            int mId, hcId;
-
+        /*  int mId, hcId;
             int ret = pingtest(mId, hcId, "https://10.0.0.2");
-            fprintf(INFO, "pingtest ret:%d\n", ret);
+            fprintf(INFO, "pingtest ret:%d\n", ret); */
         }
         if(orbisPadGetButtonPressed(ORBISPAD_R2))
         {
             fprintf(INFO, "R2 pressed\n");
-
-            uint64_t numb;
-            uint32_t ret = sceKernelGetCpuTemperature(&numb);
-//            printf( "sceKernelGetCpuTemperature returned %i\n", ret);
-            fprintf(INFO, "TEMP %d°C\n", numb);
         }
     }
 }
@@ -203,7 +197,6 @@ bool initApp()
 
     sceSystemServiceHideSplashScreen();
 
-
     confPad = orbisPadGetConf(); 
 
     if( ! initAppGl() ) return false;
@@ -220,9 +213,7 @@ unsigned int frame   = 1,
 int main(int argc, char *argv[])
 {
     StoreOptions set;
-    int ret = sceKernelIccSetBuzzer(1);
-
-    sleep(2);
+    int ret = -1;
     /*
         prepare pad and piglet modules in advance,
         read /data/orbislink/orbislink_config.ini for debugnet
@@ -231,28 +222,16 @@ int main(int argc, char *argv[])
     */
     //debugNetInit("10.0.0.2", 18198, 3);
 
-    // to access /user and notify we need full privileges
-    //escalate_priv();
-
-sys_dynlib_load_prx("/app0/Media/jb.prx", &libcmi);
-
-ret = sys_dynlib_dlsym(libcmi, "jailbreak_me", &jailbreak_me);
-if (!ret)
-{
-    klog("jailbreak_me resolved from PRX\n");
-   
-    if(ret = jailbreak_me() != 0)
-    goto error;
-}
-else
-    goto error; 
-
+    // to access /user and notify() we need full privileges...
 
     /* load some required modules */
 #if defined (USE_NFS)
+
+    // to access /user and notify() we need full privileges
+//  escalate_priv();
     ret = initOrbisLinkAppVanillaGl();
 
-    /* my setup */
+    /* some nfs setup */
 //  ret = orbisNfsInit("nfs://10.0.0.2/hostapp");
     ret = orbisNfsInit("nfs://10.0.0.2/Archive/PS4-work/orbisdev/orbisdev-samples/linux_es2goodness");
 //  ret = orbisNfsInit("nfs://192.168.2.61/home/alfa/NFS/hostapp");
@@ -260,11 +239,24 @@ else
     fprintf(INFO, "orbisNfsInit return: %x\n", ret);
     sleep(1);
 #else
-    if(ret = initGL_for_the_store() < 0)  
-          goto error;
-         
+
+    /* load custom .prx, resolve and call a function */
+    sys_dynlib_load_prx("/app0/Media/jb.prx", &libcmi);
+
+    ret = sys_dynlib_dlsym(libcmi, "jailbreak_me", &jailbreak_me);
+    if (!ret)
+    {
+        klog("jailbreak_me resolved from PRX\n");
+
+        if(ret = jailbreak_me() != 0) goto error;
+    }
+    else
+        goto error;
+
+    if(ret = initGL_for_the_store() < 0) goto error;
 
 #endif
+
     if(!ret)
        sceKernelIccSetBuzzer(1);
 
@@ -312,10 +304,8 @@ else
             //goto err;
         }
 
-        /// draw
+        /// draw !
 
-        // freetype demo-font.c, renders text just from init_
-        //render_text(); 
         // ES_UI
         GLES2_scene_render();
 
@@ -341,13 +331,11 @@ else
         }
 
         orbisGlSwapBuffers();  /// flip frame
-
-        sceKernelUsleep(10);  // haha, control your rendering properly , use delta time for animations not wait 
     }
 
 error:
-   sceKernelIccSetBuzzer(2); 
-   msgok(FATAL, "App has Died with exit code %i", ret);
+    sceKernelIccSetBuzzer(2);
+    msgok(FATAL, "App has Died with exit code %i", ret);
 
     // destructors
     ORBIS_RenderFillRects_fini();

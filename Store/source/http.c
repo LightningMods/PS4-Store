@@ -230,7 +230,6 @@ error:
     return statusCode;
 }
 
-
 //int download_file(int libnetMemId, int libhttpCtxId, const char* src, const char* dst)
 void *start_routine(void *argument)
 {
@@ -278,8 +277,6 @@ void *start_routine(void *argument)
         if(total_read >= i->contentLength || prog >=  100)  {   //          reset
             prog = 100; break;//runn = 0; // stop
         }
-
-        //_InterlockedExchange(&g_progress, prog);
     }
     ret  = sceKernelClose(fd);
 
@@ -317,28 +314,22 @@ int netInit(void)
 void Network_Init()
 {
 #if defined (__ORBIS__)
-
-
-
     int ret = netInit();
     if (ret < 0) { klog("netInit() error: 0x%08X\n", ret); }
     libnetMemId = ret;
 
-
-    klog("after http\n");
     ret = sceHttpInit(libnetMemId, libsslCtxId, HTTP_HEAP_SIZE);
     if (ret < 0) { klog("sceHttpInit() error: 0x%08X\n", ret); }
     libhttpCtxId = ret;
 #endif
 }
 
+// the _v2 version is used in download panel
 int dl_from_url(const char *url_, const char *dst_, bool is_threaded)
 {
-
     //avoid Pool error
     if(libhttpCtxId == 0xFF || libnetMemId == 0xFF)
            Network_Init();
-        
 
     dl_args.src = url_;
     dl_args.dst = dst_;
@@ -360,7 +351,6 @@ int dl_from_url(const char *url_, const char *dst_, bool is_threaded)
         else
             ret = start_routine(&dl_args);
     }
-
 
     return ret;
 }

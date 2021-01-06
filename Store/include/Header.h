@@ -79,8 +79,6 @@ int jb();
 #define DKS_TIMEOUT 0x804101E2
 
 
-#define klog printf
-
 #define TRUE 1
 #define FALSE 0
 
@@ -148,7 +146,7 @@ void logshit(char* format, ...);
 
 
 #define VERSION_MAJOR 1
-#define VERSION_MINOR 4
+#define VERSION_MINOR 2
 
 #define BUILD_YEAR_CH0 (__DATE__[ 7])
 #define BUILD_YEAR_CH1 (__DATE__[ 8])

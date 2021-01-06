@@ -5,7 +5,7 @@
     (shaders
      beware)
 
-    2020, masterzorag
+    2020, masterzorag & LM
 
     deals with dynamically queued items to move, following related posix thread
     note four threads are max used, we access each thread arguments data,
@@ -29,11 +29,6 @@
 // freetype-gl pass last composed Text_Length in pixel, we use to align text!
 extern float tl;
 
-// from GLES2_menu.c
-void GLES2_render_submenu_text_v2( vertex_buffer_t *vbo, vec3 *offset );
-// from GLES2_scene_v2.c
-layout_t * GLES2_layout_init(int req_item_count);
-
 extern texture_font_t  *main_font, // small
                        *sub_font,  // left panel
                        *titl_font;
@@ -42,7 +37,7 @@ extern vec2 resolution;
 extern layout_t *left_panel,
                 *icon_panel,
                 *queue_panel;
-
+extern int http_ret;
 
 #define ENTRIES  (4)
 dl_arg_t      *pt_info = NULL;
@@ -160,8 +155,8 @@ void GLES2_render_queue(layout_t *layout, int used)
                 if(layout->texture[ idx ] == 0)
                 {
                     sprintf(&tmp[0], "%s", ta->token_d[ PICPATH ].off);
-                    // on pc we use different path
-                    //char *f = strstr(&tmp[0], "storedata");
+                    /* on pc we use different path
+                    char *f = strstr(&tmp[0], "storedata"); */
                     layout->texture[ idx ] = load_png_asset_into_texture(&tmp[0]);
                 }
                 // gles render square texture
@@ -228,9 +223,19 @@ void GLES2_render_queue(layout_t *layout, int used)
                         case RUNNING:   sprintf(&tmp[0], "Downloading");
                         break;
                         case READY:
-                        case COMPLETED: sprintf(&tmp[0], "Download Completed");
+                        case COMPLETED: 
+                        sprintf(&tmp[0], " Download Completed");
+                        break;
+                        default:  
+                        sprintf(&tmp[0], " Download error: %i", ta->status);
                         break;
                     }
+
+                    if (http_ret != 200 && http_ret != 0)
+                    {
+                        sprintf(&tmp[0], ", Download Failed with %i", http_ret);
+                    }
+
                     // we need to know Text_Length_in_px in advance, so we call this:
                     texture_font_load_glyphs( main_font, &tmp[0] );
                     // we know 'tl' now, right align
@@ -279,7 +284,7 @@ void queue_panel_init(void)
 
         if(queue_panel)
         {
-            // should matches the icon panel size
+            // should match the icon panel size
             queue_panel->bound_box = icon_panel->bound_box;
             queue_panel->fieldsize = (ivec2) { 1, ENTRIES };
             queue_panel->item_c    = ENTRIES;
@@ -300,7 +305,7 @@ void *start_routine2(void *argument)
     i->status   = RUNNING;
     i->progress = 0.f;
 
-    int ret = -1;
+    int ret = CANCELED;
     uint64_t total_read = 0;
 
     printf("i->url %s\n",   i->url);
@@ -316,18 +321,19 @@ void *start_routine2(void *argument)
 
     int fd = sceKernelOpen(i->dst, O_WRONLY | O_CREAT, 0777);
     // fchmod(fd, 777);
-    if (fd < 0) return fd;
+    if (fd < 0) { i->status = CANCELED;  return fd; }
 
     while (1)
     {
         int read = sceHttpReadData(i->req, buf, sizeof(buf));
-        if (read <  0) return read;
-        if (read == 0) break;
+        if (read < 0) { i->status = read;  return read; }
+        if (read == 0) { i->status = CANCELED; break; }
 
         ret = sceKernelWrite(fd, buf, read);
         if (ret < 0 || ret != read)
         {
-            if (ret < 0) return ret;
+            if (ret < 0) { i->status = CANCELED; return ret; };
+            i->status = CANCELED;
             return -1;
         }
         total_read += read;
@@ -337,7 +343,11 @@ void *start_routine2(void *argument)
 
         i->progress = (double)(((float)total_read / i->contentLength) * 100.f);
 
-        if(i->progress >= 100.) break;
+        if (i->progress >= 100.)
+        {
+            i->status = COMPLETED;
+            break;
+        }
 
         if(total_read %(4096*128) == 0)
             fprintf(DEBUG, "thread[%d] reading data, %lub / %lub (%.2f%%)\n", i->idx, total_read, i->contentLength, i->progress);
@@ -347,10 +357,11 @@ void *start_routine2(void *argument)
     // don't wait before returning
     //sleep(2);
 
-    i->status = COMPLETED;
+    
 
     // clean thread / reset
     if(i->req) sceHttpDeleteRequest(i->req);
+
 
     return ret;
 }
@@ -485,8 +496,12 @@ int dl_from_url_v2(const char *url_, const char *dst_, item_idx_t *t)
 
         ani_notify("Download thread start");
     }
+    else
+        msgok(NORMAL, "Download Failed with code\n StatusCode: %i\n\n URL: %s\n\n DEST: %s", ret, url_, dst_);
 
     fprintf(DEBUG, "icon_panel->item_d[%d]\n\n", ta->g_idx);
+
+
 
     return ret;
 }

@@ -24,12 +24,9 @@ extern float tl;
 #include "json.h"
 
 
-int group_c; // total counted Group
-
-
 // check for pattern in whitelist patterns, if there take count, if not fall in Other
 static char *group_label[] =
-{   // 0 is reserved index (label, total count)
+{   // 0 is reserved index for: (label, total count)
     "HB Game",
     "Emulator",
     "Emulator Add-On",
@@ -38,13 +35,14 @@ static char *group_label[] =
     "Utility",
     "Other"
 };
+
 /* pattern from icon tokens, item for Group arrays */
 static int check_for_token(char *pattern, item_t *item, int count)
 {
     int   i, plen = strlen(pattern);
     item_idx_t *t = NULL;
-    /*  loop over, skip very first (0), reserved 
-        and (6) for Other, used as "unmatched labels" */
+    /*  loop over, skip very first one (0), reserved
+        and (6) for Other used as "unmatched labels" */
     for(i = 1; i < count -1; i++)
     {
         t = &item[i].token_d[0];
@@ -68,7 +66,7 @@ static int check_for_token(char *pattern, item_t *item, int count)
 // we return an array of indexes and count number, per Group
 item_t *analyze_item_t_v2(item_t *items, int item_count)
 {
-    // same number of group_labels, +1 for main index
+    // same number of group_labels, +1 for reserved main index
     int  i, count = sizeof(group_label) / sizeof(group_label[0]) +1;
     // dynalloc
     item_t   *ret = calloc(count, sizeof(item_t));
@@ -106,6 +104,7 @@ item_t *analyze_item_t_v2(item_t *items, int item_count)
         // store the index for item related to icon_panel list!
         ret[ res ].token_d[ idx ].len = i;
 
+        // is installed?
         char tmp[128];
         sprintf(&tmp[0], "/user/app/%s", items[i].token_d[ ID ].off);
 
@@ -143,8 +142,6 @@ so we have 7 Groups, check:112
 */
 #endif
 
-    // update global variable
-    group_c = count;
     return ret;
 }
 

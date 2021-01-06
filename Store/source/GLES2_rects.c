@@ -77,28 +77,8 @@ static GLint  u_color_location;
 static GLint  u_time_location;
  // from main.c
 extern double u_t;
-extern int    selected_icon;
-extern ivec4  rela_pos;
 
-typedef vec2  my_Point;
-typedef vec4  my_FRect; // ( p1.xy, p2.xy )
-
-#define COUNT  8
-vec4 r[COUNT];
-
-
-// old way, tetris uses it
-vec4 px_pos_to_normalized2(vec2 *pos, vec2 *size)
-{
-    vec4 n; // 2 points .xy pair: (x, y),  (x + texture.w, y + texture.h)
-
-    n.xy  = 2. / resolution * (*pos) - 1.; // (-1,-1) is BOTTOMLEFT, (1,1) is UPRIGHT
-    n.zw  = 2. / resolution * (*size);
-    n.yw *= -1.; // flip Y axis!
-//  printf("%f,%f,%f,%f\n", n.x, n.y, n.w, n.w);
-    return n;
-}
-
+/* translate px vector to normalized coord */
 vec2 px_pos_to_normalized(vec2 *pos)
 {
     return 2. / resolution * (*pos) - 1.;
@@ -176,8 +156,6 @@ void ORBIS_RenderDrawLines(//SDL_Renderer *renderer,
         glEnableVertexAttribArray(a_position_location);
         /* write color to use to the shader location */
         glUniform4f(u_color_location, color.r, color.g, color.b, color.a);
-        /* write time to use to the shader location */
-//        glUniform1f(u_time_location, (float)u_t);
         /* floats pairs for points from 0-4 */
         glDrawArrays(GL_LINES, 0, 2);
     }
@@ -228,7 +206,7 @@ void ORBIS_RenderFillRects(enum SH_type SL_program, const vec4 *rgba, const vec4
     /* emit a triangle strip for each rectangle */
     for(int i = 0; i < count; ++i)
     {
-        const my_FRect *rect = &rects[i];
+        const vec4 *rect = &rects[i];
 
         GLfloat xMin = rect->x,  xMax = rect->z,
                 yMin = rect->y,  yMax = rect->w;
@@ -237,13 +215,11 @@ void ORBIS_RenderFillRects(enum SH_type SL_program, const vec4 *rgba, const vec4
         vertices[2] = xMax;  vertices[3] = yMin;
         vertices[4] = xMin;  vertices[5] = yMax;
         vertices[6] = xMax;  vertices[7] = yMax;
-        /* each (vec2)point comes from pairs of floats */
+        /* each (vec2) point comes from pairs of floats */
         glVertexAttribPointer    (a_position_location, 2, GL_FLOAT, GL_FALSE, 0, vertices);
         glEnableVertexAttribArray(a_position_location);
         /* write color to use to the shader location */
         glUniform4f(u_color_location, color.r, color.g, color.b, color.a);
-        /* write time to use to the shader location */
-//        glUniform1f(u_time_location, (float)u_t);
         /* floats pairs for points from 0-4 */
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     }
@@ -253,6 +229,40 @@ void ORBIS_RenderFillRects(enum SH_type SL_program, const vec4 *rgba, const vec4
     glUseProgram(0);
 }
 
+/* draw filling color bar */
+void GLES2_DrawFillingRect(vec4 *r, // float/normalized rectangle
+                           vec4 *c, // normalized color
+                double *percentage) // how much filled from left
+{   // shrink frect RtoL by_percentage
+    r->z = r->x + (r->z - r->x) * (*percentage / 100.f);
+//  fprintf(INFO, "%.2f %.2f, %.2f, %.2f %f\n", r.x, r.y, r.z, r.w, dfp);
+    ORBIS_RenderFillRects(USE_COLOR, c, r, 1);
+}
+
+/* older UI version code, for reference */
+
+#if 0
+extern int    selected_icon;
+extern ivec4  rela_pos;
+
+typedef vec2  my_Point;
+typedef vec4  my_FRect; // ( p1.xy, p2.xy )
+
+#define COUNT  8
+vec4 r[COUNT];
+
+
+// old way, tetris uses it
+vec4 px_pos_to_normalized2(vec2 *pos, vec2 *size)
+{
+    vec4 n; // 2 points .xy pair: (x, y),  (x + texture.w, y + texture.h)
+
+    n.xy  = 2. / resolution * (*pos) - 1.; // (-1,-1) is BOTTOMLEFT, (1,1) is UPRIGHT
+    n.zw  = 2. / resolution * (*size);
+    n.yw *= -1.; // flip Y axis!
+//  printf("%f,%f,%f,%f\n", n.x, n.y, n.w, n.w);
+    return n;
+}
 
 // used in line_and_rects sample
 void ORBIS_RenderFillRects_rndr(void)
@@ -415,3 +425,5 @@ step2:
     // texts
     GLES2_render_submenu_text(num);
 }
+#endif
+

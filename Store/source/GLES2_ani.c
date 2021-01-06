@@ -7,8 +7,6 @@
 #include <stdio.h>
 #include <string.h>
 
-/*clang *.c -I$PS4SDK/include/MiniAPI -L/Archive/PS4-work/OrbisLink/samples/pc_es2template/source -lMiniAPI -L/Archive/PS4-work/OrbisLink/samples/pc_es2template/source -lm -lGL -lEGL -lX11 -D_MAPI_ -I$PS4SDK/include/freetype2 -lfreetype -png -ggdb*/
-
 #include "defines.h"
 
 #include "ani.h"
@@ -29,9 +27,9 @@ extern int selected_icon; // from main.c
 // shader and locations
 static GLuint program    = 0; // default program
 static GLuint shader_fx  = 0; // text_ani.[vf]
-static mat4   model, view, projection;
 static float  g_Time     = 0.f;
 static GLuint meta_Slot  = 0;
+static mat4   model, view, projection;
 // ---------------------------------------------------------------- reshape ---
 static void reshape(int width, int height)
 {
@@ -40,35 +38,29 @@ static void reshape(int width, int height)
 }
 
 // ---------------------------------------------------------- animation ---
-
 static fx_entry_t *ani;          // the fx info
 
 static vertex_buffer_t *line_buffer,
                        *text_buffer,
                        *vbo = NULL;
-
 // bool flag
 static int ani_is_running = 0;
-// callback when done looping all status
+// callback when done looping all effect status
 static void ani_post_cb(void)
 {
     printf("%s()\n", __FUNCTION__);
     O_action_dispatch();
 }
+
 // ---------------------------------------------------------------- display ---
 static void render_ani( int text_num, int type_num )
 {
-    // we already clean in main renderloop()!
-
-    //type_num = 1; // which fx_entry_t test
+    // we already clean in main render loop!
 
     fx_entry_t *ani = &fx_entry[0];
-    //*         fx  = &fx_entry[0];
-    //      int t_n = ani - fx;
-
     program         = shader_fx;
 
-    if(ani->t_now >= ani->t_life) // looping ani_state
+    if(ani->t_now >= ani->t_life) // looping animation status
     {
         switch(ani->status) // setup for next fx
         {
@@ -79,10 +71,9 @@ static void render_ani( int text_num, int type_num )
             /* CLOSED reached: looped once all status */  ani_is_running =  0 ;
             ani_post_cb();  break;
         }
-        ani->fcount = 0; // reset framecount
-        ani->t_now  = 0.f;
+        ani->fcount = 0;   // reset framecount (useless)
+        ani->t_now  = 0.f; // yes, it's using time
     }
-
 /*
     printf("program: %d [%d] fx state: %.1f, frame: %3d/%3.f %.3f\r", 
             program, t_n,
@@ -109,18 +100,16 @@ static void render_ani( int text_num, int type_num )
                 type_num    /10.);
         if(1) /* draw whole VBO (storing all added texts) */
         {
-            /* draw whole VBO item arrays */
             vertex_buffer_render( line_buffer, GL_LINES );
             vertex_buffer_render( vbo,         GL_TRIANGLES );
         }
     }
     glDisable( GL_BLEND ); 
 
-    ani->fcount += 1; // increase frame counter
+    ani->fcount += 1; // increase frame counter (useless)
 
-    // we already swapframe in main renderloop()!
+    // we already swap frame in main render loop!
 }
-
 
 /* wrapper from main */
 void GLES2_ani_test( fx_entry_t *_ani )
@@ -137,8 +126,6 @@ void GLES2_ani_test( fx_entry_t *_ani )
     }
 }
 
-
-
 // --------------------------------------------------------- custom shaders ---
 static GLuint CreateProgram( void )
 {
@@ -150,8 +137,8 @@ static GLuint CreateProgram( void )
     /* use embedded glsl source */
     #include "ani_vert.h"
     #include "ani_frag.h"
-    const GLchar  *vShader = &ani_vert[0];
-    const GLchar  *fShader = &ani_frag[0];
+    GLchar  *vShader = &ani_vert[0];
+    GLchar  *fShader = &ani_frag[0];
 #endif
     GLuint programID = BuildProgram(vShader, fShader); // shader_common.c
 
@@ -175,7 +162,6 @@ void GLES2_ani_init(int width, int height)
     line_buffer = vertex_buffer_new( "vertex:3f,color:4f" );
 
 #if 0 // rects
-    
     vec2 pen = { .5, .5 };
 for (int i = 0; i < 10; ++i)
 {
@@ -311,6 +297,8 @@ for (int i = 0; i < 10; ++i)
 
 void GLES2_ani_update(double now)
 {
+    if(ani_is_running == 0) return;
+
     ani->t_now += now - g_Time;
     g_Time      = now;
 }
@@ -351,10 +339,9 @@ void ani_notify(const char *message)
     }
 }
 
-// draw one loop
+// draw one effect loop
 void GLES2_ani_draw(void)
 {
     if(vbo && ani_is_running) render_ani(1, 0);
     //printf("%f %d\n", ani->t_now, ani->status);
 }
-

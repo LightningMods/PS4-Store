@@ -6,24 +6,31 @@
 #include <string.h>
 #include <unistd.h>
 
-#include <freetype-gl.h>  // links against libfreetype-gl
-
 #include "defines.h"
-
-extern vec4 color; // GLES_rects.c
 
 extern GLuint shader;
 extern texture_atlas_t *atlas;
 extern mat4             model, view, projection;
+
+
+// to json-simple.c
+
+texture_font_t *sub_font  = NULL,
+               *main_font = NULL,
+               *titl_font = NULL;
+
+/* older UI code is preprocessed out, but for reference */
+#if 0
+vertex_buffer_t *text_buffer[4];
+
 extern vec2 resolution;
 // freetype-gl pass last composed Text_Length in pixel, we use to align text!
 extern float tl;
 
-// to json-simple.c
-vertex_buffer_t *text_buffer[4];
-texture_font_t  *sub_font  = NULL,
-                *main_font = NULL,
-                *titl_font = NULL;
+extern vec4 color; // GLES_rects.c
+
+#include <freetype-gl.h>  // links against libfreetype-gl
+
 // ------------------------------------------------------- typedef & struct ---
 typedef struct {
     float x, y, z;    // position (3f)
@@ -34,7 +41,7 @@ typedef struct {
 const char *left_menu[] =
 {
     "Games",
-    "Apps",
+    "Installed Apps",
     "Groups",
     "Ready to install",
     "Updates",
@@ -68,6 +75,7 @@ const char *selection_menu[] =
 
 #define lines_num (sizeof(settings_menu) / sizeof(settings_menu[0]))
 
+#define TEXTBOX_H  (700)  // vertical text box size, in px
 
 void GLES2_render_submenu_text( int num )
 {
@@ -90,6 +98,7 @@ void GLES2_render_submenu_text( int num )
     glUseProgram( 0 );
     glBindTexture(GL_TEXTURE_2D, 0);
 }
+#endif
 
 mat4 bak;
 void GLES2_render_submenu_text_v2( vertex_buffer_t *vbo, vec3 *offset )
@@ -126,29 +135,105 @@ void GLES2_render_submenu_text_v2( vertex_buffer_t *vbo, vec3 *offset )
     }
 }
 
-#define TEXTBOX_H  (700)  // vertical text box size, in px
+
+// font reloading
+static void ftgl_purge_fonts( void )
+{
+    if(titl_font) texture_font_delete(titl_font);
+    if( sub_font) texture_font_delete( sub_font);
+    if(main_font) texture_font_delete(main_font);
+
+    // discard cached glyphs, whole atlas from start
+    if(atlas) texture_atlas_delete(atlas);
+    //if(atlas->id) glDeleteTextures(1, &atlas->id), atlas->id = 0;
+    /* renew atlas map */
+    atlas = texture_atlas_new( 1024, 1024, 1 );
+}
+
+// smallest part
+static texture_font_t *font_from_buffer(unsigned char *data, size_t size, int fontsize)
+{
+    return texture_font_new_from_memory(atlas, fontsize, data, size);
+}
+
+static bool ftgl_init_fonts( unsigned char *data, size_t size )
+{
+    bool  ret = 1;
+    titl_font = font_from_buffer(data, size, 32);
+     sub_font = font_from_buffer(data, size, 25);
+    main_font = font_from_buffer(data, size, 18);
+
+    if( ! titl_font
+    ||  !  sub_font
+    ||  ! main_font ) ret = 0;
+
+    return ret;
+}
+
+void GLES2_fonts_from_ttf(const char *path)
+{
+    int     ret = 0;
+    void   *ttf = NULL;
+    size_t size = 0;
+
+    if(path)
+    {   /* load .ttf in memory */
+        ttf  = orbisFileGetFileContent(path);
+        size = _orbisFile_lastopenFile_size;
+
+        if( ! ttf )
+        {
+            msgok(NORMAL,"TTF Failed Loading from %s\n Switching to Embedded", path); goto default_embedded;
+        }
+
+    } else {
+
+default_embedded: // fallback on error
+
+        ttf  = &font_ttf[0];
+        size =  font_ttf_len;
+    }
+    // recreate global glyph atlas
+    ftgl_purge_fonts();
+
+    // prepare our set of different size
+    if( ! ftgl_init_fonts( ttf, size ) )
+    {   // custom data failed...
+        char tmp[256];
+        sprintf(&tmp[0], "%s failed to create font from %s\n", __FUNCTION__, path);
+        printf("%s\n", tmp);
+
+        sceKernelIccSetBuzzer(3);
+        // loaded ttf, but failed fonts, flag to free()!
+        ret = 1;
+        // go back and fallback to default font
+        goto default_embedded;
+    }
+    // done with ttf data, release (to recheck for fix)
+    //if(ret) free(ttf), ttf = NULL;
+}
 
 // init VBOs for menu texts
 void GLES2_init_submenu( void )
 {
+#if 0
     // each vbo acts as temporary placeholder, per view
     // commons
     text_buffer[ON_MAIN_SCREEN] = vertex_buffer_new( "vertex:3f,tex_coord:2f,color:4f" );
     text_buffer[ON_SUBMENU]     = vertex_buffer_new( "vertex:3f,tex_coord:2f,color:4f" );
     text_buffer[ON_SUBMENU_2]   = vertex_buffer_new( "vertex:3f,tex_coord:2f,color:4f" );
     text_buffer[ON_ITEM_PAGE]   = NULL;//vertex_buffer_new( "vertex:3f,tex_coord:2f,color:4f" );
-#if 0
+
     sub_font = texture_font_new_from_memory(atlas, 36, _hostapp_fonts_zrnic_rg_ttf,
                                                        _hostapp_fonts_zrnic_rg_ttf_len);
 #else
-    titl_font = texture_font_new_from_memory(atlas, 32, font_ttf,
-                                                        font_ttf_len);
-    sub_font  = texture_font_new_from_memory(atlas, 25, font_ttf,
-                                                        font_ttf_len);
-    main_font = texture_font_new_from_memory(atlas, 18, font_ttf,
-                                                        font_ttf_len);
+    // load fonts once, don't delete them, but reuse!
+    titl_font = texture_font_new_from_memory(atlas, 32, font_ttf, font_ttf_len);
+    sub_font  = texture_font_new_from_memory(atlas, 25, font_ttf, font_ttf_len);
+    main_font = texture_font_new_from_memory(atlas, 18, font_ttf, font_ttf_len);
 #endif
 
+#if 0
     vec2 pen = (0); // init pen: 0,0 is lower left
     vec4 col = (vec4)( 1. );
     pen.y    = (resolution.y - TEXTBOX_H) /2 + TEXTBOX_H 
@@ -191,7 +276,7 @@ void GLES2_init_submenu( void )
         }
         add_text( text_buffer[ON_SUBMENU_2], sub_font, selection_menu[i], &col, &pen );  // set vertexes
     }
-#if 1
+
     // Left panel
     pen = (vec2){ 0., resolution.y - 100 };
     col = (vec4){ .8164, .8164, .8125, 1. };
