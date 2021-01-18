@@ -11,6 +11,7 @@ ifeq ($(UNAME_S),Linux)
 		CC  	:= clang
 		LD 		:= ld.lld
 		CDIR	:= linux
+		ASMLR   := as
 endif
 ifeq ($(UNAME_S),Darwin)
 		CC 		:= /usr/local/opt/llvm/bin/clang
@@ -26,7 +27,8 @@ LFLAGS 		:= -m elf_x86_64 -pie --script $(TOOLCHAIN)/link.x --eh-frame-hdr $(LDI
 
 CFILES 		:= $(wildcard $(SDIR)/*.c)
 CPPFILES 	:= $(wildcard $(SDIR)/*.cpp)
-OBJS 		:= $(patsubst $(SDIR)/%.c, $(ODIR)/%.o, $(CFILES)) $(patsubst $(SDIR)/%.cpp, $(ODIR)/%.o, $(CPPFILES))
+ASMFILES 	:= $(wildcard $(SDIR)/*.s)
+OBJS 		:= $(patsubst $(SDIR)/%.s, $(ODIR)/%.o, $(ASMFILES)) $(patsubst $(SDIR)/%.c, $(ODIR)/%.o, $(CFILES))  $(patsubst $(SDIR)/%.cpp, $(ODIR)/%.o, $(CPPFILES))
 STUBOBJS 	:= $(patsubst $(SDIR)/%.c, $(ODIR)/%.o.stub, $(CFILES)) $(patsubst $(SDIR)/%.cpp, $(ODIR)/%.o.stub, $(CPPFILES))
 
 TARGET = libExample.prx
@@ -44,8 +46,14 @@ $(TARGET): $(ODIR) $(OBJS)
 $(TARGETSTUB): $(ODIR) $(STUBOBJS)
 	$(CC) $(ODIR)/*.o.stub -o $(TARGETSTUB) -target x86_64-pc-linux-gnu -shared -fuse-ld=lld -ffreestanding -nostdlib -fno-builtin $(LDIRS) $(LIBS)
 
+
+
+$(ODIR)/%.o: $(SDIR)/%.s
+	$(ASMLR) -o $@ $<
+
 $(ODIR)/%.o: $(SDIR)/%.c
 	$(CC) $(CFLAGS) -o $@ $<
+
 
 $(ODIR)/%.o: $(SDIR)/%.cpp
 	$(CC) $(CFLAGS) -o $@ $<
