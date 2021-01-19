@@ -145,6 +145,9 @@ int initGL_for_the_store(void)
     ret = orbisPadInit();
     if(ret != 1) return -2;
 
+     //dont need it anymore, so dump the sig, the loader will redownload on launch
+     unlink("/user/app/NPXS39041/homebrew.elf.sig");
+
 
     if(MD5_hash_compare("/user/app/NPXS39041/pig.sprx", "854a0e5556eeb68c23a97ba024ed2aca") == SAME_HASH && MD5_hash_compare("/user/app/NPXS39041/shacc.sprx", "8a21eb3ed8a6786d3fa1ebb1dcbb8ed0") == SAME_HASH)
     {

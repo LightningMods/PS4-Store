@@ -336,6 +336,10 @@ int dl_from_url(const char *url_, const char *dst_, bool is_threaded)
     dl_args.req = -1;
     dl_args.is_threaded = is_threaded;
 
+    if(strstr(url_, "settings.ini") != NULL || strstr(dst_, "settings.ini") != NULL)
+       msgok(FATAL, "CDN is trying to download to the Settings file\n\n from: %s\n to: %s\n\n\n Which is NOT Allowed\n\n Reconsider this CDN", url_, dst_);
+
+
     ret = ini_dl_req(&dl_args);
     if (ret == 200)
     {

@@ -69,5 +69,5 @@ int MD5_hash_compare(const char* file1, const char* hash);
 
 
 
-#define assert(expr) if (!(expr)) msgok(FATAL, "Assetion Failed!");
+#define assert(expr) if (!(expr)) msgok(FATAL, "Assertion Failed!");
 
