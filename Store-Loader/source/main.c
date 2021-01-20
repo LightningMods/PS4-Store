@@ -18,6 +18,22 @@ int libsslCtxId = 0;
 int libhttpCtxId = 0;
 int secure_boot = false;
 
+struct revocation_list {
+	char version[50];
+	char hash[50];
+};
+
+
+
+struct revocation_list revoke_list[] = {
+	{"1.00", "339bc526059dbec608b9002edb977d48"},
+	{"1.01", "0c8187f5a1b4266c4f796b054231cbec"},
+	{"1.02.5", "928dafc24a6e4120acb3925ca77c7edd"},
+};
+
+
+
+
 #define SCE_LIBC_HEAP_SIZE_EXTENDED_ALLOC_NO_LIMIT (0xffffffffffffffffUL)
 // size_t sceLibcHeapSize = 256 * 1024 * 1024;
 //size_t sceLibcHeapSize = SCE_LIBC_HEAP_SIZE_EXTENDED_ALLOC_NO_LIMIT;
@@ -145,6 +161,60 @@ int MD5_hash_compare(const char* file1, const char* file2)
 	return SAME_HASH;
 }
 
+
+
+int update_version_by_hash(char* path)
+{
+	bool failed = false;
+    int fd = sceKernelOpen(path, 0, 0);
+    if (fd <= 0) {
+    	return 2;
+	}
+
+	// Get the Update into mem
+	int size = sceKernelLseek(fd, 0, SEEK_END);
+	sceKernelLseek(fd, 0, SEEK_SET);
+
+	void* buffer = NULL;
+	int ret = sceKernelMmap(0, size, PROT_READ, MAP_PRIVATE, fd, 0, &buffer);
+	sceKernelClose(fd);
+
+	if (buffer == NULL) {
+		return 3;
+	}
+
+	// Create MD5 hash
+	MD5_CTX ctx;
+	MD5_Init(&ctx);
+	MD5_Update(&ctx, buffer, size);
+
+	unsigned char digest[16] = {0};
+	MD5_Final(digest, &ctx);
+
+	char md5_string[33] = {0};
+
+	for(int i = 0; i < 16; ++i) {
+	    sprintf(&md5_string[i*2], "%02x", (unsigned int)digest[i]);
+	}
+	md5_string[32] = 0;
+
+	for (int y = 0; y < (sizeof(revoke_list) / sizeof(revoke_list[0])); y++) {
+
+	     logshit("Update Hash: %s, current checked revoked hash: %s\n", md5_string, revoke_list[y].hash);
+
+         if (strcmp(md5_string, revoke_list[y].hash) == 0) {
+			logshit("------- Update IS revoked ---------\n");
+			return 1;
+		}
+
+	}
+
+	sceKernelMunmap(buffer, size);
+
+	return 0;
+}
+
+
 int checkForUpdate(char *cdnbuf)
 {       int UpdateRet = -1;
 	    int fd = sceKernelOpen("/user/app/NPXS39041/homebrew.elf", 0x0000, 0x0000);
@@ -212,7 +282,7 @@ int main()
 
 	init_STOREGL_modules();
 
-	int libjb, librsa, advanced_settings = 0, dl_ret = 0;
+	int libjb = -1, librsa = -1, advanced_settings = 0, dl_ret = 0;
     char Devkit_M[250];
 	char cdninpute[255];
 	char cdnbuf[255];
@@ -253,13 +323,15 @@ int main()
           klog("jailbreak_me resolved from PRX\n");
    
             if(ret = jailbreak_me() != 0){
-              msgok("FATAL Jailbreak failed with code: %x\n", ret); goto exit_sec;}
+              msgok("FATAL Jailbreak failed with code: %x\n", ret); goto exit_sec;
+            }
+            else printf("jailbreak_me() returned %i\n", ret);
         }
         else{
           msgok("FATAL Jailbreak failed with code: %x\n", ret); goto exit_sec;}
 
 
-	if (jailbreak_me() == 0)
+	if (ret == 0)
 	{
 		klog("After jb\n");
 		unlink("/data/Loader_Logs.txt");
@@ -466,9 +538,27 @@ int main()
                      {
                            snprintf(cdnbuf, 254, "%s/update/homebrew.elf.sig", cdninpute);
                            logshit("[STORE_GL_Loader:%s:%i] ----- Secure Boot is ENABLED ---\n", __FUNCTION__, __LINE__);
+
+                           logshit("[STORE_GL_Loader:%s:%i] ----- Checking Revocation list..... ---\n", __FUNCTION__, __LINE__);
+
+                           if(update_version_by_hash("/user/app/NPXS39041/homebrew.elf") == 0)
+                           {
+                              
+
+                              logshit("[STORE_GL_Loader:%s:%i] ----- Update is NOT part of the revoked listed ---\n", __FUNCTION__, __LINE__);
+                           }
+                           else
+                           {
+
+                             	 msgok("FATAL!\n\n [SWU Error] Update IS Revoked\n\n to use this Update turn off Secure Boot");
+                            	 goto exit_sec;
+
+                           }
+
+
                            logshit("[STORE_GL_Loader:%s:%i] ----- Downloading RSA Sig CDN: %s ---\n", __FUNCTION__, __LINE__, cdninpute);
                            if(download_file(libnetMemId, libhttpCtxId, cdnbuf, "/user/app/NPXS39041/homebrew.elf.sig") == 200)
-                          {
+                           {
                                loadmsg("Checking RSA Sig...\n");
 
                            
@@ -491,15 +581,16 @@ int main()
 
                                  klog("VerifyRSA from PRX return %x\n", ret);
                              }
-                               else
-                                 msgok("FATAL!\n\n could not resolve RSA PRX\n");
+                               else{
+                                 msgok("FATAL!\n\n could not resolve RSA PRX\n"); goto exit_sec;}
+                               
 
                               
                               
                           }
                           else
                           {
-                            msgok("FATAL!\n\nSecure Boot is enabled but we couldnt\n Download the Sig file from the CDN");
+                            msgok("FATAL!\n\nSecure Boot is enabled but we couldnt\n Download the Sig file from the CDN"); goto exit_sec;
                           }
 
 
