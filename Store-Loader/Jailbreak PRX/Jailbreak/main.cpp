@@ -71,7 +71,8 @@ int mira_jailbreak()
 	return JAILBREAK_FAILED;
 }//
 
-
+extern "C"
+{
 
 int jailbreak_me(void)
 {
@@ -90,4 +91,5 @@ int jailbreak_me(void)
 
 
     return ret;
+}
 }

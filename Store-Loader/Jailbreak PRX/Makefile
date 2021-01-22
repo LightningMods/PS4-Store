@@ -22,7 +22,7 @@ ODIR 		:= $(INTDIR)
 SDIR 		:= $(PROJDIR)
 IDIRS 		:= -I$(TOOLCHAIN)/include
 LDIRS 		:= -L$(TOOLCHAIN)/lib
-CFLAGS 		:= -cc1 -triple x86_64-scei-ps4-elf -munwind-tables $(IDIRS) -emit-obj
+CFLAGS 		:= -cc1 -triple x86_64-pc-freebsd-elf  -munwind-tables $(IDIRS) -emit-obj
 LFLAGS 		:= -m elf_x86_64 -pie --script $(TOOLCHAIN)/link.x --eh-frame-hdr $(LDIRS) $(LIBS) $(TOOLCHAIN)/lib/crtlib.o
 
 CFILES 		:= $(wildcard $(SDIR)/*.c)
@@ -44,7 +44,7 @@ $(TARGET): $(ODIR) $(OBJS)
 	mv $(ODIR)/$(PROJDIR).prx $(TARGET)
 
 $(TARGETSTUB): $(ODIR) $(STUBOBJS)
-	$(CC) $(ODIR)/*.o.stub -o $(TARGETSTUB) -target x86_64-pc-linux-gnu -shared -fuse-ld=lld -ffreestanding -nostdlib -fno-builtin $(LDIRS) $(LIBS)
+	$(CC) $(ODIR)/*.o.stub -o $(TARGETSTUB) -target x86_64-pc-linux-gnu  -shared -fuse-ld=lld -ffreestanding -nostdlib -fno-builtin $(LDIRS) $(LIBS)
 
 
 
@@ -59,10 +59,10 @@ $(ODIR)/%.o: $(SDIR)/%.cpp
 	$(CC) $(CFLAGS) -o $@ $<
 
 $(ODIR)/%.o.stub: $(SDIR)/%.c
-	$(CC) -target x86_64-pc-linux-gnu -ffreestanding -nostdlib -fno-builtin -fPIC -c $(IDIRS) -o $@ $<
+	$(CC) -target x86_64-pc-linux-gnu  -ffreestanding -nostdlib -fno-builtin -fPIC -c $(IDIRS) -o $@ $<
 
 $(ODIR)/%.o.stub: $(SDIR)/%.cpp
-	$(CC) -target x86_64-pc-linux-gnu -ffreestanding -nostdlib -fno-builtin -fPIC -c $(IDIRS) -o $@ $<
+	$(CC) -target x86_64-pc-linux-gnu  -ffreestanding -nostdlib -fno-builtin -fPIC -c $(IDIRS) -o $@ $<
 
 $(ODIR):
 	@mkdir $@
