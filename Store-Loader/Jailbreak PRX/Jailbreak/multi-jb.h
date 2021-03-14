@@ -184,9 +184,9 @@ struct kpayload_firmware_args {
 #define K700_PRISON_0              0x0113E398
 #define K701_PRISON_0              0x0113E398
 #define K702_PRISON_0              0x0113E398
-#define K750_PRISON_0              0x0158DC60
-#define K751_PRISON_0              0x0158DC60
-#define K755_PRISON_0              0x0158DC60
+#define K750_PRISON_0              0x0113B728
+#define K751_PRISON_0              0x0113B728
+#define K755_PRISON_0              0x0113B728
 #define K800_PRISON_0              0x0111A7D0
 #define K801_PRISON_0              0x0
 #define K803_PRISON_0              0x0
