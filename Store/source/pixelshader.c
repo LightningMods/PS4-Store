@@ -37,11 +37,11 @@ extern double u_t;
 extern vec2 p1_pos;  // unused yet
 
 // ---------------------------------------------------------------- display ---
-void pixelshader_render( GLuint program_i )
+void pixelshader_render( GLuint program_i, vertex_buffer_t *vbo, vec2 *req_size )
 {
     curr_Program = mz_shader;
 
-    if(program_i) { printf("unimplemented yet\n"); return; }
+    if(program_i) curr_Program = shader; // just one for now
 
     glUseProgram( curr_Program );
     {
@@ -49,8 +49,12 @@ void pixelshader_render( GLuint program_i )
         glEnable(GL_BLEND);
         glBlendEquation(GL_FUNC_ADD);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        // notify shader about screen size, mouse position and actual cumulative time
-        glUniform2f       ( glGetUniformLocation( curr_Program, "resolution" ), resolution.x, resolution.y);
+        // notify shader about screen size
+        if(req_size)
+            glUniform2f   ( glGetUniformLocation( curr_Program, "resolution" ), req_size->x, req_size->y);
+        else
+            glUniform2f   ( glGetUniformLocation( curr_Program, "resolution" ), resolution.x, resolution.y);
+        // mouse position and actual cumulative time
         glUniform2f       ( glGetUniformLocation( curr_Program, "mouse" ),      p1_pos.x, p1_pos.y);
         glUniform1f       ( glGetUniformLocation( curr_Program, "time" ),       u_t); // notify shader about elapsed time
         // ft-gl style: MVP
@@ -58,9 +62,13 @@ void pixelshader_render( GLuint program_i )
         glUniformMatrix4fv( glGetUniformLocation( curr_Program, "view" ),       1, 0, view.data);
         glUniformMatrix4fv( glGetUniformLocation( curr_Program, "projection" ), 1, 0, projection.data);
         // draw whole VBO items array: fullscreen rectangle
-        vertex_buffer_render( rects_buffer, GL_TRIANGLES );
 
-    glDisable(GL_BLEND);
+        if(vbo)
+            vertex_buffer_render( vbo, GL_TRIANGLES );
+        else
+            vertex_buffer_render( rects_buffer, GL_TRIANGLES );
+
+        glDisable(GL_BLEND);
     }
     glUseProgram( 0 );
 }
@@ -73,18 +81,50 @@ static void reshape(int width, int height)
 }
 
 // ------------------------------------------------------ from source shaders ---
-#include "p_shaders.h"
+#include "p_shaders.h"     // actually, just 4
+#include "ps_signs_frag.h" 
 
 static GLuint CreateProgramFE(int program_num)
 {
     GLchar  *vShader = vs_s[0];
     GLchar  *fShader = fs_s[ program_num ];
+
+    if(program_num < 4) 
+        fShader = fs_s[ program_num ];
+    else
+    {
+        switch(program_num)
+        {
+            case 4:  fShader = ps_signs_shader;   break;
+            case 5:  fShader = (void*)orbisFileGetFileContent( "/user/app/NPXS39041/shaders/SnowIsFalling.frag" );  break;
+            default: fShader = fs_s[ 2/*iTime*/]; break;
+        }
+    }
+
     // use shader_common.c
     GLuint programID = BuildProgram(vShader, fShader);
 
-    if (!programID) { fprintf(ERROR, "program creation failed!\n"); sleep(2); }
+    if (!programID) { log_error( "program creation failed!"); sleep(2); }
     
     return programID;
+}
+
+// get a vbo from rectangle, in px coordinates
+vertex_buffer_t *vbo_from_rect(vec4 *rect)
+{
+    vertex_buffer_t *vbo = vertex_buffer_new( "vertex:3f,color:4f" );
+    vec4   color = { 1, 0, 0, 1 };
+    float r = color.r, g = color.g, b = color.b, a = color.a;
+    /* VBO is setup as: "vertex:3f, color:4f */ 
+    vertex_t vtx[4] = { { rect->x, rect->y, 0,   r,g,b,a },
+                        { rect->x, rect->w, 0,   r,g,b,a },
+                        { rect->z, rect->w, 0,   r,g,b,a },
+                        { rect->z, rect->y, 0,   r,g,b,a } };
+    // two triangles: 2 * 3 vertex
+    GLuint   idx[6] = { 0, 1, 2,    0, 2, 3 };
+    vertex_buffer_push_back( vbo, vtx, 4, idx, 6 );
+
+    return vbo;
 }
 
 // ------------------------------------------------------------------- init ---
@@ -107,7 +147,7 @@ void pixelshader_init( int width, int height )
         int  x1 = (int)( x0 + 64 );
         int  y1 = (int)( y0 - 64 );
 #else
-    #warning "one fullstreen pixelshader"
+    #warning "one fullscreen pixelshader"
     int  x0 = (int)( 0 );
     int  y0 = (int)( 0 );
     int  x1 = (int)( width );
@@ -129,10 +169,11 @@ void pixelshader_init( int width, int height )
     }
 #endif
     /* compile, link and use shader */
-    /* load from file */
     mz_shader = CreateProgramFE(0);
+       shader = CreateProgramFE(4); // test emb2
     // feedback
-    fprintf(INFO, "[%s] program_id=%d (0x%08x)\n", __FUNCTION__, mz_shader, mz_shader);
+    log_info( "[%s] program_id=%d (0x%08x)", __FUNCTION__, mz_shader, mz_shader);
+    log_info( "[%s] program_id=%d (0x%08x)", __FUNCTION__,    shader,    shader);
 
     mat4_set_identity( &projection );
     mat4_set_identity( &model );

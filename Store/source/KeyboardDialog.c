@@ -11,20 +11,21 @@ char *StoreKeyboard(const char *Title, char *initialTextBuffer)
     wchar_t title[100];
     char    titl [100];
 
-     if(initialTextBuffer && strlen(initialTextBuffer) > 69) return "Too Long";
+    if(initialTextBuffer
+    && strlen(initialTextBuffer) > 69) return "Too Long";
 
     memset(inputTextBuffer, 0, sizeof(inputTextBuffer));
     memset(&storebuffer[0], 0, sizeof(storebuffer));
 
     if(initialTextBuffer)
-        sprintf(&storebuffer[0], "%s", initialTextBuffer);
+        snprintf(&storebuffer[0], 69, "%s", initialTextBuffer);
     //converts the multibyte string src to a wide-character string starting at dest.
     mbstowcs(inputTextBuffer, storebuffer, strlen(storebuffer) + 1);
     // use custom title
     if(Title)
-        sprintf(&titl[0], "%s", Title);
+        snprintf(&titl[0], 99, "%s", Title);
     else // default
-        sprintf(&titl[0], "%s", "Store Keyboard");
+        snprintf(&titl[0], 99, "%s", "Store Keyboard");
     //converts the multibyte string src to a wide-character string starting at dest.
     mbstowcs(title, titl, strlen(titl) + 1);
 
@@ -38,7 +39,7 @@ char *StoreKeyboard(const char *Title, char *initialTextBuffer)
     param.type            = ORBIS_IME_TYPE_BASIC_LATIN;
     param.enterLabel      = ORBIS_IME_ENTER_LABEL_DEFAULT;
 
-    int init_log = sceImeDialogInit( & param, NULL);
+    sceImeDialogInit( & param, NULL);
 
     int status;
     while(1)
@@ -56,7 +57,7 @@ char *StoreKeyboard(const char *Title, char *initialTextBuffer)
 
             if(result.endstatus == ORBIS_IME_DIALOG_END_STATUS_OK)
             {
-                klog("status %i, endstatus %i \n", status, result.endstatus);
+                log_info( "status %i, endstatus %i ", status, result.endstatus);
                 wcstombs(&storebuffer[0], inputTextBuffer, 70);
                 goto Finished;
             }

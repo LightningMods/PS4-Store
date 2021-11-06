@@ -3,7 +3,7 @@
 
     GLES2 shaders facilities about loading and building shaders
 
-    2019, 2020, masterzorag
+    2019-21, masterzorag
 */
 
 #include <stdio.h>
@@ -11,29 +11,7 @@
 #include <assert.h>
 #include <unistd.h> // sleep
 
-#if defined (__ORBIS__)
-
-#include <ps4sdk.h>
-#include <debugnet.h>
-#include <orbisGl.h>
-#define  fprintf  debugNetPrintf
-#define  ERROR    DEBUGNET_ERROR
-#define  DEBUG    DEBUGNET_DEBUG
-#define  INFO     DEBUGNET_INFO
-
-#else // on linux
-
-#include <stdio.h>
-#include <GLES2/gl2.h>
-#include <EGL/egl.h>
-#define  debugNetPrintf  fprintf
-#define  ERROR           stderr
-#define  DEBUG           stdout
-#define  INFO            stdout
-
-//#include "defines.h"
-
-#endif
+#include "defines.h"
 
 GLuint create_vbo(const GLsizeiptr size, const GLvoid* data, const GLenum usage)
 {
@@ -59,7 +37,7 @@ static GLuint LinkProgram(GLuint vertexShader, GLuint fragmentShader)
     GLint linkSuccess;
     glGetProgramiv(programHandle, GL_LINK_STATUS, &linkSuccess);
     if (linkSuccess == GL_FALSE)
-        { fprintf(ERROR, "GL_LINK_STATUS error!\n"); sleep(2); }
+        { log_error( "GL_LINK_STATUS error!"); programHandle = 0; }
 
     /* once we have the SL porgram, don't leak any shader! */
     if(vertexShader)   { glDeleteShader(vertexShader),   vertexShader   = 0; }
@@ -81,7 +59,7 @@ static GLuint BuildShader(const char *source, GLenum shaderType)
     {
         GLchar messages[256];
         glGetShaderInfoLog(shaderHandle, sizeof(messages), 0, &messages[0]);
-        fprintf(ERROR, "compile glsl error : %s\n", messages);
+        log_error( "compile glsl error : '%s', '%s'", messages, source);
     }
     return shaderHandle;
 }

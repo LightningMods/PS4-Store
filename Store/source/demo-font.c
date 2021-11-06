@@ -99,7 +99,7 @@ vertex_buffer_t *buffer = NULL;
 mat4             model, view, projection;
 
 // ---------------------------------------------------------------- reshape ---
-void reshape(int width, int height)
+static void reshape(int width, int height)
 {
     glViewport(0, 0, width, height);
     mat4_set_orthographic( &projection, 0, width, 0, height, -1, 1);
@@ -113,10 +113,10 @@ void render_text( void )
     glUseProgram( shader );
     // setup state
     glActiveTexture( GL_TEXTURE0 );
-    glBindTexture( GL_TEXTURE_2D, atlas->id ); // rebind glyph atlas
-    glDisable( GL_CULL_FACE );
-    glEnable ( GL_BLEND );
-    glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+    glBindTexture  ( GL_TEXTURE_2D, atlas->id ); // rebind glyph atlas
+    glDisable      ( GL_CULL_FACE );
+    glEnable       ( GL_BLEND );
+    glBlendFunc    ( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
     {
         glUniform1i       ( glGetUniformLocation( shader, "texture" ),    0 );
         glUniformMatrix4fv( glGetUniformLocation( shader, "model" ),      1, 0, model.data);
@@ -139,7 +139,6 @@ void render_text( void )
                 // selected = framecount %num_of_texts; // ... flip text
                 selected = j;
             }
-            //printf("%d, %d\n", j, selected);
             //for(int j=0; j<num_of_texts; j+=1)  // draw all texts
             {
                 // draw just text[j]
@@ -158,6 +157,7 @@ void render_text( void )
     }
 
     glDisable( GL_BLEND );  // Reset state back
+    glUseProgram( 0 );
 
     // we already swapframe in main renderloop()!
 }
@@ -166,6 +166,8 @@ void render_text( void )
 void add_text( vertex_buffer_t * buffer, texture_font_t * font,
                const char * text, vec4 * color, vec2 * pen )
 {
+    if(!buffer) { log_error(buffer); return; }
+
     size_t i;
     float r = color->r, g = color->g, b = color->b, a = color->a;
 
@@ -188,7 +190,7 @@ void add_text( vertex_buffer_t * buffer, texture_font_t * font,
             float t0 = glyph->t0;
             float s1 = glyph->s1;
             float t1 = glyph->t1;
-            GLuint indices[6] = {0,1,2, 0,2,3}; // (two triangles)
+            GLuint indices[6] = {0,1,2,   0,2,3}; // (two triangles)
             /* VBO is setup as: "vertex:3f, tex_coord:2f, color:4f" */
             vertex_t vertices[4] = { { x0,y0,0,   s0,t0,   r,g,b,a },
                                      { x0,y1,0,   s0,t1,   r,g,b,a },
@@ -214,7 +216,7 @@ static void my_add_text( vertex_buffer_t * buffer, texture_font_t * font,
     idx->count  = vector_size( buffer->items ) - idx->offset;
     num_of_texts++;
     /* report the item info */
-    fprintf(INFO, "item[%.2d] .off: %3d, .len: %2d, buffer glyph count: %3zu, '%s'\n",
+    log_info( "item[%.2d] .off: %3d, .len: %2d, buffer glyph count: %3zu, '%s'",
             num_of_texts, idx->offset, idx->count, vector_size( buffer->items ), text );
 }
 // ------------------------------------------------------ freetype-gl shaders ---
@@ -264,7 +266,7 @@ static GLuint CreateProgram( void )
     programID = BuildProgram(s_vertex_shader_code, s_fragment_shader_code);
 
     // feedback
-    fprintf(INFO, "program_id=%d (0x%08x)\n", programID, programID);
+    log_info( "program_id=%d (0x%08x)", programID, programID);
 
     return programID;
 }
@@ -284,7 +286,6 @@ int es2init_text (int width, int height)
     /* load .ttf in memory */
 //  void *ttf = orbisFileGetFileContent( "/hostapp/fonts/zrnic_rg.ttf" );
     buffer    = vertex_buffer_new( "vertex:3f,tex_coord:2f,color:4f" );
-    //printf("buffer at %p, atlas at %p, atlas->id:%d\n", buffer, atlas, atlas->id);
 
     char *text = "this is a DKS Studios store homebrew";
 
@@ -296,10 +297,9 @@ int es2init_text (int width, int height)
     vec4 white = { 1.f, 1.f, 1.f, 1.f }; // RGBA color
 //    vec4 col   = { 1.f, 0.f, 0.4, 1.f }; // RGBA color
 
-//  font = texture_font_new_from_memory(atlas, 24, ttf, _orbisFile_lastopenFile_size);
+
     font = texture_font_new_from_memory(atlas, 24, _hostapp_fonts_zrnic_rg_ttf, _hostapp_fonts_zrnic_rg_ttf_len);
- 
-    //printf("font at %p\n", font);
+
 
     // 1.
     char *s = "coming before xmas :lol:";   // set text
@@ -354,9 +354,8 @@ int es2init_text (int width, int height)
     pen.y = 400;
     for( h=16; h < 24; h += 2)
     {
-//      font = texture_font_new_from_memory(atlas, h, ttf, _orbisFile_lastopenFile_size);
+
         font = texture_font_new_from_memory(atlas, h, _hostapp_fonts_zrnic_rg_ttf, _hostapp_fonts_zrnic_rg_ttf_len);
-        //printf("font at %p\n", font);
         pen.x  = tx;
         pen.y -= font->height;  // reset pen, 1 line down
 
@@ -381,7 +380,7 @@ int es2init_text (int width, int height)
     // compile, link and use shader
     shader = CreateProgram();
                                   
-    if(!shader) { msgok(FATAL, "Program Failed with exit_code %x\n", shader); }
+    if(!shader) { msgok(FATAL, "Program Failed with exit_code %x", shader); }
 
     mat4_set_identity( &projection );
     mat4_set_identity( &model );
@@ -399,3 +398,4 @@ void es2sample_end( void )
 
     if(shader) glDeleteProgram(shader), shader = 0;
 }
+

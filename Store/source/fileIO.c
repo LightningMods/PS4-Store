@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include "log.h"
 
 
 size_t _orbisFile_lastopenFile_size;
@@ -17,7 +18,7 @@ unsigned char *orbisFileGetFileContent( const char *filename )
 
     FILE *file = fopen( filename, "rb" );
     if( !file )
-        { printf( "Unable to open file \"%s\".\n", filename ); return 0; }
+        {log_error( "Unable to open file \"%s\".", filename ); return NULL; }
 
     fseek( file, 0, SEEK_END );
     size_t size = ftell( file );

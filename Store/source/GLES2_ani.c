@@ -48,7 +48,7 @@ static int ani_is_running = 0;
 // callback when done looping all effect status
 static void ani_post_cb(void)
 {
-    printf("%s()\n", __FUNCTION__);
+    log_info("%s()", __FUNCTION__);
     O_action_dispatch();
 }
 
@@ -75,7 +75,7 @@ static void render_ani( int text_num, int type_num )
         ani->t_now  = 0.f; // yes, it's using time
     }
 /*
-    printf("program: %d [%d] fx state: %.1f, frame: %3d/%3.f %.3f\r", 
+    log_info("program: %d [%d] fx state: %.1f, frame: %3d/%3.f %.3f\r", 
             program, t_n,
                      ani->status /10.,
                      ani->fcount,
@@ -144,10 +144,10 @@ static GLuint CreateProgram( void )
 
     if (!programID)
     {
-        printf( "failed!\n"); 
+        log_error( "failed!");
     }
     // feedback
-    printf( "ani program_id=%d (0x%08x)\n", programID, programID);
+    log_error( "ani program_id=%d (0x%08x)", programID, programID);
     return programID;
 }
 
@@ -173,7 +173,7 @@ for (int i = 0; i < 10; ++i)
     GLuint indices[6] = {0,1,2,  0,2,3}; // (two triangles)
 
     /* VBO is setup as: "vertex:3f, vec4 color */ 
-    printf("%d %d %d %d\n", x0, y0, x1, y1);
+    log_info("%d %d %d %d", x0, y0, x1, y1);
     vertex_t vertices[4] = { { x0,y0,0,  color },
                              { x0,y1,0,  color },
                              { x1,y1,0,  color },
@@ -195,7 +195,6 @@ for (int i = 0; i < 10; ++i)
     pen.y = height - 50;
 //    add_text( text_buffer, title, "Glyph metrics", &black, &pen );
 
-    printf("%f %f\n", 0.1*width, origin.y);
     float r = color.r, g = color.g, b = color.b, a = color.a;
 
     // lines
@@ -277,7 +276,7 @@ for (int i = 0; i < 10; ++i)
     compile, link and use shader */
     shader_fx = CreateProgram();
 
-    if(!shader_fx) { printf("program creation failed\n"); }
+    if(!shader_fx) { log_error("program creation failed"); }
 
     /* init ani effect */
     ani         = &fx_entry[0];
@@ -343,5 +342,5 @@ void ani_notify(const char *message)
 void GLES2_ani_draw(void)
 {
     if(vbo && ani_is_running) render_ani(1, 0);
-    //printf("%f %d\n", ani->t_now, ani->status);
+   
 }

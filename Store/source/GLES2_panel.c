@@ -15,11 +15,9 @@
     #include <debugnet.h>
 #endif
 
-#include <freetype-gl.h>
-// freetype-gl pass last composed Text_Length in pixel, we use to align text!
-extern float tl;
-
 #include "defines.h"
+
+#include "GLES2_common.h"
 
 #include "json.h"
 
@@ -41,8 +39,8 @@ static int check_for_token(char *pattern, item_t *item, int count)
 {
     int   i, plen = strlen(pattern);
     item_idx_t *t = NULL;
-    /*  loop over, skip very first one (0), reserved
-        and (6) for Other used as "unmatched labels" */
+    /*  loop over, skip very first one (0) reserved and
+        (6) for Other, used to keep "unmatched labels" */
     for(i = 1; i < count -1; i++)
     {
         t = &item[i].token_d[0];
@@ -53,12 +51,12 @@ static int check_for_token(char *pattern, item_t *item, int count)
 
         /* check for common 'Game' label */
         if(i == 1
-        && strstr(pattern, "Game"))  // hit found +
+        && strstr(pattern, "Game"))  // hit found
             break;
     }
     // store: if not found before falls into Other, take count
     item[i].token_c += 1;
-/*  printf("%d: %s -> %s (%d)\n", i, pattern, item[i].token_d[0].off,
+/*  log_info("%d: %s -> %s (%d)", i, pattern, item[i].token_d[0].off,
                                               item[i].token_c); */
     return i;
 }
@@ -79,7 +77,7 @@ item_t *analyze_item_t_v2(item_t *items, int item_count)
         // dynalloc for item_idx_t
         if(!ret[i].token_d)
             ret[i].token_d = calloc(ret[i].token_c, sizeof(item_idx_t));
-//        printf("%s %p\n", __FUNCTION__, layout->item_d[idx].token_d);
+//        log_info("%s %p", __FUNCTION__, layout->item_d[idx].token_d);
         // clean count, address token
         t = &ret[i].token_d[0];
              ret[i].token_c = 0;
@@ -88,7 +86,7 @@ item_t *analyze_item_t_v2(item_t *items, int item_count)
         t->len = 0;
     }
     // reserved index (0)!
-    ret[0].token_d = NULL; 
+    ret[0].token_d = NULL;
     ret[0].token_c = count -1;
 
     /*  count for label, iterate all passed items
@@ -98,60 +96,96 @@ item_t *analyze_item_t_v2(item_t *items, int item_count)
         t = &items[i].token_d[ APPTYPE ];
         // in which Group fall this item?
         int res = check_for_token(t->off, &ret[0], count);
-/*      printf("%d %d: %s (%d) %s\n", i, res, ret[ res ].token_d[0].off,
+/*      log_info("%d %d: %s (%d) %s", i, res, ret[ res ].token_d[0].off,
                                               ret[ res ].token_c, t->off); */
         int idx = ret[ res ].token_c;
         // store the index for item related to icon_panel list!
         ret[ res ].token_d[ idx ].len = i;
-
-        // is installed?
-        char tmp[128];
-        sprintf(&tmp[0], "/user/app/%s", items[i].token_d[ ID ].off);
-
-        if( if_exists(tmp) )
-        {
-            printf("%3d: %s\n", i, tmp);
-        }
-/*
-p icon_panel->item_d[101]->token_d[APPTYPE]
-$18 = {off = 0xbed330 "HB Game", len = 7}
-
-*/
     }
+
 #if 1
     // done building the item_t array, now we check items sum
     int check = 0;
     for(i = 1; i < count; i++)
     {   // report the main reserved index
-        printf("%d %s: %d\n", i, ret[i].token_d[0].off,
+        log_info("%d %s: %d", i, ret[i].token_d[0].off,
                                  ret[i].token_c);
         // shrink buffers, remember +1 !!!
         ret[i].token_d = realloc(ret[i].token_d, (ret[i].token_c +1)
                                                * sizeof(item_idx_t));
         check += ret[i].token_c;
     }
-    printf("so we have %d items across %d Groups\n", check, ret[0].token_c);
-/*
-1 HB Game: 3
-2 Emulator: 18
-3 Emulator Add-On: 3
-4 Media: 4
-5 Mira Plugins: 0
-6 Other: 84
-so we have 7 Groups, check:112
-*/
+    log_info("Sorted %d items across %d Groups", check, ret[0].token_c);
 #endif
 
     return ret;
 }
 
-/* qsort struct comparison function (C-string field) */
-static int struct_cmp_by_token(const void *a, const void *b)
+
+bool is_in_list(char *pattern, item_idx_t *t)
 {
-    item_idx_t *ia = (item_idx_t *)a;
-    item_idx_t *ib = (item_idx_t *)b;
-    return strcmp(ia->off, ib->off);
-/* strcmp functions works exactly as expected from comparison function */
+    for(int i = 0; i < t->len; i++)
+    {   /* check for match */
+        if( strstr(t[ i +1 ].off, pattern) )
+            return true; // hit found
+    }
+    return false;
+}
+
+// update all double pointers
+void build_char_from_items(char **data, item_idx_t *filter)
+{
+    for(int i = 0; i < filter->len; i++)
+    {
+        data[ i ] = filter[ i +1 ].off;
+       
+    }
+}
+
+// build unique list of Token_Label (PV, AUTHOR)
+item_idx_t *build_item_list(item_t *items, int item_count, enum token_name TN)
+{
+    
+    // at most same number of items, we realloc then
+    item_idx_t *ret = calloc(item_count +1, sizeof(item_idx_t));
+    int  curr_count = 1;
+
+    for(int i = 0; i < item_count; i++)
+    {
+        item_idx_t *t = &items[i].token_d[ TN ];
+        // skip "not single token" for now
+        if( strstr(t->off, ", ")
+        ||  strstr(t->off, "& ") ) continue;
+
+        if( ! is_in_list(t->off, ret) )
+        {   // add entry
+            ret[curr_count].off  = t->off;
+            ret[curr_count].len += 1;
+            ret[0].len += 1;
+            curr_count += 1;
+        }
+        else // add count
+            ret[curr_count].len += 1;
+    }
+    ret = realloc(ret, curr_count * sizeof(item_idx_t));
+    // save total count
+    ret[0].len = curr_count -1;
+
+    // report unique entries and count
+    for(int j = 1; j < ret->len +1; j++)
+    {
+        volatile int count = 0;
+        for(int i = 0; i < item_count; i++)
+        {
+            if( strstr(items[i].token_d[ TN ].off,
+                         ret[j].off) ) count += 1;
+        }
+        // save count
+        ret[j].len = count;
+        log_info( "%2d: %24s, %d, %d", j, ret[j].off, ret[j].len, count);
+    }
+    log_info( "%s ret %p", __FUNCTION__, ret);
+    return ret;
 }
 
 // search for pattern in items tokens
@@ -171,12 +205,14 @@ item_idx_t *search_item_t(item_t *items, int item_count, enum token_name TN, cha
     {
         item_idx_t *t = &items[i].token_d[ TN ];
 
-        if(TN == NAME)
+        if(TN == NAME
+        || TN == PV
+        || TN == AUTHOR)
         {
             p = strstr(t->off, pattern);
-            if(p) // hit found?
+            if(p) // hit found ?
             {
-                printf("hit[%d]:%3d %s\n", curr_count, i, t->off);
+                log_info("hit[%d]:%3d %s", curr_count, i, t->off);
                 ret[curr_count].off = t->off,
                 ret[curr_count].len = i; // store index for icon_panel!
                 curr_count++;
@@ -189,7 +225,7 @@ item_idx_t *search_item_t(item_t *items, int item_count, enum token_name TN, cha
             if(!res // hit found?
             && len == strlen(t->off)) // same length?
             {
-                printf("hit[%2d]:%3d %s %d %lu\n", curr_count, i, t->off, res, strlen(pattern));
+                log_info("hit[%2d]:%3d %s %d %lu", curr_count, i, t->off, res, strlen(pattern));
                 ret[curr_count].off = t->off,
                 ret[curr_count].len = i; // store index for icon_panel!
                 curr_count++;
@@ -201,7 +237,7 @@ item_idx_t *search_item_t(item_t *items, int item_count, enum token_name TN, cha
     // save count as very first item_idx_t.len
     ret[0].len = curr_count -1;
 
-    printf("pattern '%s' counts %d hits\n", pattern, ret[0].len);
+    log_info("pattern '%s' counts %d hits", pattern, ret[0].len);
 
     ret[0].off = strdup(pattern); // save pattern too
 
@@ -213,8 +249,234 @@ void destroy_item_t(item_idx_t **p)
 {
     if(*p)
     {   // clean auxiliary array
-        if(*p[0]->off) free(p[0]->off), p[0]->len = 0;
+        for(int i=0; i<1 /*NUM_OF_USER_TOKENS*/ ; i++)
+        {
+            if(p[i]->off) { free(p[i]->off), p[i]->off = NULL; p[i]->len = 0; }
+        }
         free(*p), *p = NULL;
     }
+}
+
+/* common text */
+
+static vertex_buffer_t *t_vbo = NULL, // for sysinfo
+                       *c_vbo = NULL; // common texts, per view
+
+vec3 clk = (vec3){ 0., 0, 15 }; // timer(now, prev, limit in seconds)
+
+// disk free percentages
+double dfp_hdd  = -1.,
+       dfp_ext  = -1.,
+       dfp_fmem = -1.;
+
+static bool refresh_clk = true;
+
+/* upper right sytem_info, updates
+   internally each 'clk.z' seconds */
+void GLES2_Draw_sysinfo(void)
+{   // update time
+    clk.x += u_t - clk.y;
+    clk.y  = u_t;
+    // time limit passed!
+    if(clk.x / clk.z > 1. || refresh_clk) // by time or requested
+    {   // destroy VBO
+        if(t_vbo) vertex_buffer_delete(t_vbo), t_vbo = NULL;
+        // reset clock
+        clk.x = 0., refresh_clk = false;
+    }
+
+    if( ! t_vbo ) // refresh
+    {
+        char tmp[128];
+        vec2 pen,
+             origin   = resolution,
+             border   = (vec2)(50.);
+             t_vbo    = vertex_buffer_new( "vertex:3f,tex_coord:2f,color:4f" );
+        // add border, in px
+              origin -= border;
+              pen     = origin;
+        /* get systime */
+        time_t     t  = time(NULL);
+        struct tm *tm = localtime(&t);
+        char s[65];
+        strftime(s, sizeof(s), "%A, %B %e %Y, %H:%M", tm); // custom date string
+//      log_info("%s", s);
+        snprintf(&tmp[0], 127, "%s", s);
+        // we need to know Text_Length_in_px in advance, so we call this:
+        texture_font_load_glyphs( sub_font, &tmp[0] );
+        // we know 'tl' now, right align
+        pen.x -= tl;
+        // fill the vbo
+        add_text( t_vbo, sub_font, &tmp[0], &col, &pen);
+
+        uint32_t numb = -1;
+        size_t fmem = -1;
+        sceKernelGetCpuTemperature(&numb);
+        if (numb > 140)
+            log_warn("PS4 Temp is above max");
+
+        sceKernelAvailableFlexibleMemorySize(&fmem);
+        snprintf(&tmp[0], 127, "System Version: %x, %d°C, %zub", SysctlByName_get_sdk_version(), numb, fmem);
+        // we need to know Text_Length_in_px in advance, so we call this:
+        texture_font_load_glyphs( main_font, &tmp[0] ); 
+        // we know 'tl' now, right align
+        pen.x  = origin.x - tl,
+        pen.y -= 32;
+        vec4 c = col * .75f;
+        // fill the vbo
+        add_text( t_vbo, main_font, &tmp[0], &c, &pen);
+
+        snprintf(&tmp[0], 127, "Store Version: %s", &completeVersion[0]);
+        // we need to know Text_Length_in_px in advance, so we call this:
+        texture_font_load_glyphs( main_font, &tmp[0] ); 
+        // we know 'tl' now, right align
+        pen.x  = origin.x - tl,
+        pen.y -= 32;
+        // fill the vbo
+        add_text( t_vbo, main_font, &tmp[0], &c, &pen);
+
+        // eventually, skip dfp on some view...
+        if(menu_pos.z < ON_ITEMzFLOW)
+        {   /* text for disk_free stats */
+               pen = (vec2) { 26, 100 };
+            vec4 c = col * .75f;
+            //
+            if(strstr(usbpath(), "/mnt/usb"))
+            {   // get mountpoint stat info
+                dfp_ext = df(&tmp[0], "/mnt/usb0");
+                
+            } else
+                dfp_ext = 0;
+            // start upper
+            if(dfp_ext > 0) pen.y += 32;
+            // fill the vbo
+            add_text( t_vbo, sub_font, "Storage", &col, &pen);
+            // new line
+            pen.x   = 26,
+            pen.y  -= 32;
+
+            if(dfp_ext > 0)
+            {
+                add_text( t_vbo, main_font, &tmp[0], &c, &pen);
+                // a new line
+                pen.x   = 26,
+                pen.y  -= 32;
+            }
+
+            //if(dfp_hdd < 0)
+            {  // get mountpoint stat info
+                dfp_hdd = df(&tmp[0], "/user");
+            }
+            add_text( t_vbo, main_font, &tmp[0], &c, &pen);
+
+            // when not on cf
+            drop_some_icon0();
+        }
+        else
+            drop_some_coverbox();
+
+        // update FMEM
+        dfp_fmem = (1. - (double)fmem / (double)0x8000000) * 100.;
+
+        // we eventually added glyphs... (todo: glyph cache)
+        refresh_atlas();
+    }
+
+    // skip on some view...
+    if(menu_pos.z < ON_ITEMzFLOW)
+    {   /* draw filled color bar */
+        vec4 r = (vec4) { -.975, -.900,   -.505, -.905 };
+        // gles render the frect
+        ORBIS_RenderFillRects(USE_COLOR, &grey, &r, 1);
+        /* draw filling color bar, by percentage */
+        GLES2_DrawFillingRect(&r, &sele, &dfp_hdd);
+
+        /* the vertical grey frect (4px line) */
+             r = (vec4) { 500, 0,   4, resolution.y };
+        vec2 p = r.xy,  s = r.xy + r.zw;
+        /* convert to normalized coordinates */
+        r.xy = px_pos_to_normalized(&p),
+        r.zw = px_pos_to_normalized(&s);
+        // gles render the frect
+        ORBIS_RenderFillRects(USE_COLOR, &grey, &r, 1);
+    }
+
+    /* FMEM: draw filling color bar, by percentage */
+    vec4 r = (vec4) { -.975, -.950,   -.505, -.955 };
+    //ORBIS_RenderFillRects(USE_COLOR, &grey, &r, 1);
+    ORBIS_RenderDrawBox(USE_COLOR, &grey, &r);
+    GLES2_DrawFillingRect(&r, &white, &dfp_fmem);
+
+    // texts out of VBO
+    if(t_vbo) ftgl_render_vbo(t_vbo, NULL);
+}
+
+void GLES2_refresh_sysinfo(void)
+{   // will trigger t_vbo refresh (all happen in renderloop)
+    refresh_clk = true;
+}
+
+extern char selected_text[64];
+
+void GLES2_Draw_common_texts(void)
+{
+    // split dfp, item, pages?
+
+    switch(menu_pos.z) // skip draw on those views
+    {
+        case ON_ITEMzFLOW:
+        case ON_INSTALL:
+        case ON_QUEUE:
+        case ON_ITEM_INFO:
+            return;
+    }
+
+    if( ! c_vbo ) // refresh
+    {
+        char tmp[128];
+        vec2 pen     = (vec2){ 650, 950 },
+             origin  = resolution,
+             border  = (vec2)(50.);
+             c_vbo   = vertex_buffer_new( "vertex:3f,tex_coord:2f,color:4f" );
+        // add border, in px
+             origin -= border;
+
+        // text from pointed layout_item token label
+        add_text( c_vbo, titl_font, &selected_text[0], &col, &pen);
+
+        /* lower-right item/page infos */
+        if( menu_pos.z == ON_MAIN_SCREEN
+        || (menu_pos.z == ON_LEFT_PANEL && active_p->item_c > active_p->f_size) )
+        {
+            snprintf(&tmp[0], 127, "Item %d/%d", active_p->curr_item +1,
+                                           active_p->item_c);
+            // can be more than one page?
+            if(active_p->item_c > active_p->f_size)
+            {
+                int  l   = strlen(tmp);
+                // compute page_infos
+                ivec2 pi  = (ivec2) { active_p->curr_item, active_p->item_c };
+                      pi /= (ivec2) ( active_p->fieldsize.x * active_p->fieldsize.y );
+                      pi += 1;
+                      snprintf(&tmp[l], 127, ", Page %d/%d", pi.x, pi.y);
+            }
+            // we need to know Text_Length_in_px in advance, so we call this:
+            texture_font_load_glyphs( sub_font, &tmp[0] ); 
+            // we know 'tl' now, right align
+            pen.x = origin.x - tl,
+            pen.y = border.y;
+            // fill the vbo
+            add_text( c_vbo, sub_font, &tmp[0], &col, &pen);
+        }
+        // we could have added new glyps
+        refresh_atlas();
+    }
+    else // texts out of VBO
+        ftgl_render_vbo(c_vbo, NULL);
+}
+
+void GLES2_refresh_common(void)
+{
+    if(c_vbo) vertex_buffer_delete(c_vbo), c_vbo = NULL;
 }
 

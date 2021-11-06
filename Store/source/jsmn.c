@@ -70,7 +70,6 @@ found:
 	token = jsmn_alloc_token(parser, tokens, num_tokens);
 	if (token == NULL) {
 		parser->pos = start;
-		//printf("ooops %s\n", __FUNCTION__);
 		return JSMN_ERROR_NOMEM;
 	}
 	jsmn_fill_token(token, JSMN_PRIMITIVE, start, parser->pos);
@@ -104,7 +103,6 @@ static int jsmn_parse_string(jsmn_parser *parser, const char *js,
 			token = jsmn_alloc_token(parser, tokens, num_tokens);
 			if (token == NULL) {
 				parser->pos = start;
-				//printf("ooops %s, %d %zu\n", __FUNCTION__, parser->pos, num_tokens);
 				return JSMN_ERROR_NOMEM;
 			}
 			jsmn_fill_token(token, JSMN_STRING, start+1, parser->pos);
@@ -173,7 +171,6 @@ int jsmn_parse(jsmn_parser *parser, const char *js, size_t len,
 				token = jsmn_alloc_token(parser, tokens, num_tokens);
 				if (token == NULL)
 				{
-					//printf("ooops %s\n", __FUNCTION__);
 					return JSMN_ERROR_NOMEM;
 				}
 				if (parser->toksuper != -1) {

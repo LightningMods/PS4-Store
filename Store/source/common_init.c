@@ -4,6 +4,13 @@
 #include <ps4sdk.h>
 #include <stdlib.h>  // malloc, qsort, free
 #include <unistd.h>  // close
+#include <sys/signal.h>
+#include <sig_handler.h>
+#include <stdbool.h>
+#include <utils.h>
+#include <errno.h>
+
+extern bool dump;
 
 #if defined (__ORBIS__)
 
@@ -36,6 +43,7 @@
 
 #include <orbislink.h>
 extern OrbisGlobalConf globalConf;
+int total_pages;
 
 int s_piglet_module = -1;
 int s_shcomp_module = -1;
@@ -74,6 +82,8 @@ const unsigned char completeVersion[] = {
 extern StoreOptions set,
                    *get;
 
+
+
 /* XXX: patches below are given for Piglet module from 4.74 Devkit PUP */
 static void pgl_patches_cb(void* arg, uint8_t* base, uint64_t size)
 {
@@ -90,15 +100,24 @@ static void pgl_patches_cb(void* arg, uint8_t* base, uint64_t size)
     /* Inform Piglet that we have shader compiler module loaded */
     *(int32_t*)(base + 0xB2E24) = s_shcomp_module;
 }
-
 // reuses orbislink code from new liborbis (-lorbis)
 int initGL_for_the_store(void)
 {
     int ret = 0;
 
-   klog("------------------------ Store[GL] Compiled Time: %s @ %s  -------------------------\n", __DATE__, __TIME__);
-   klog(" --------------------------------  STORE Version: %s  -----------------\n", completeVersion);
-   klog("----------------------------------------------- -------------------------\n");
+    unlink(STORE_LOG);
+
+    /*-- INIT LOGGING FUNCS --*/
+    log_set_quiet(false);
+    log_set_level(LOG_DEBUG);
+    FILE* fp = fopen(STORE_LOG, "w");
+    log_add_fp(fp, LOG_DEBUG);
+    /* -- END OF LOGINIT --*/
+
+
+    log_info("------------------------ Store[GL] Compiled Time: %s @ %s  -------------------------", __DATE__, __TIME__);
+    log_info(" --------------------------------  STORE Version: %s  -----------------", completeVersion);
+    log_info("----------------------------------------------- -------------------------");
 
     get = &set;
 
@@ -145,14 +164,28 @@ int initGL_for_the_store(void)
     ret = orbisPadInit();
     if(ret != 1) return -2;
 
-     //dont need it anymore, so dump the sig, the loader will redownload on launch
-     unlink("/user/app/NPXS39041/homebrew.elf.sig");
+
+    //Dump code and sig hanlder
+    struct sigaction new_SIG_action;
+
+    new_SIG_action.sa_handler = SIG_Handler;
+    sigemptyset(&new_SIG_action.sa_mask);
+    new_SIG_action.sa_flags = 0;
+
+    for (int i = 0; i < 43; i++)
+    { 
+       // if(i != 10 && i != 12)
+        sigaction(i, &new_SIG_action, NULL);
+    }
 
 
-    if(MD5_hash_compare("/user/app/NPXS39041/pig.sprx", "854a0e5556eeb68c23a97ba024ed2aca") == SAME_HASH && MD5_hash_compare("/user/app/NPXS39041/shacc.sprx", "8a21eb3ed8a6786d3fa1ebb1dcbb8ed0") == SAME_HASH)
+
+    if(MD5_hash_compare("/user/app/NPXS39041/pig.sprx",   "854a0e5556eeb68c23a97ba024ed2aca") == SAME_HASH
+    && MD5_hash_compare("/user/app/NPXS39041/shacc.sprx", "8a21eb3ed8a6786d3fa1ebb1dcbb8ed0") == SAME_HASH)
     {
         globalConf.confPad = orbisPadGetConf();
 
+        mkdir("/user/app/NPXS39041/covers", 0777);
         // customs
         s_piglet_module = sceKernelLoadStartModule("/user/app/NPXS39041/pig.sprx",   0, NULL, 0, NULL, NULL);
         s_shcomp_module = sceKernelLoadStartModule("/user/app/NPXS39041/shacc.sprx", 0, NULL, 0, NULL, NULL);
@@ -161,21 +194,46 @@ int initGL_for_the_store(void)
 
         ret = LoadOptions(get);
         if(!ret)
-            msgok(2, "Could NOT find/open the INI File");
+            msgok(WARNING, "Could NOT find/open the INI File");
 
-        loadmsg("Downloading and Caching Website files....\n");
+        loadmsg("Downloading and Caching Website files....");
 
-        page = 1; //first 
-        while(JsonErr == 0)
+        log_info("get->Legacy? %s (%i)", get->Legacy ? "true" : "false", get->Legacy);
+
+        if (!get->Legacy)
         {
-            JsonErr = getjson(page, get->opt[CDN_URL]);
-            page++;
+            total_pages = check_store_from_url(0, get->opt[CDN_URL], COUNT);
+            for (int i = 1; total_pages >= i; i++)
+            {
+                getjson(i, get->opt[CDN_URL], false);
+                log_info("current page: %i", i);
+            }
         }
+        else
+        {
+
+            page = 1; //first
+            while (JsonErr == 0)
+            {
+                JsonErr = getjson(page, get->opt[CDN_URL], true);
+                page++;
+            }
+        }
+
+#if BETA==1
+        if (check_store_from_url(NULL, NULL, BETA_CHECK) == 200)
+            msgok(NORMAL, "You have been Logged in as a Beta User");
+        else
+            msgok(FATAL, "The BETA has ended or been Revoked please change your CDN");
+#endif
+
+        setup_store_assets(get);
 
         sceMsgDialogTerminate();
     }
     else
-        msgok(FATAL, "SPRX ARE NOT THE SAME HASH\n ABORTING");
+        msgok(FATAL, "SPRX ARE NOT THE SAME HASH ABORTING");
+
 
     // all fine.
     return 0;

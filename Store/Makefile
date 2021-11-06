@@ -10,6 +10,8 @@ include $(ORBISDEV)/make/ps4sdk.mk
 LinkerFlags += -lkernel_stub -lSceLibcInternal_stub -lSceSysmodule_stub -lSceSystemService_stub -lSceNet_stub -lSceUserService_stub -lScePigletv2VSH_stub -lSceVideoOut_stub  -lSceImeDialog_stub -lSceGnmDriver_stub -lorbisGl -lorbis -lScePad_stub -lSceCommonDialog_stub -lSceMsgDialog_stub -lSceAudioOut_stub -lSceIme_stub -lSceAppInstUtil_stub -lSceBgft_stub -lSceSysUtil_stub -lSceHttp_stub -lSceSsl_stub -lSceNetCtl_stub
 LinkerFlags += -lfreetype-gl -lSceFreeTypeOl_stub
 LinkerFlags += -lkernel_sys_stub
+# testing exports
+LinkerFlags += -lSceLncUtil_stub
 
 CompilerFlags += -D__PS4__ -D__ORBIS__
 

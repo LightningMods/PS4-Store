@@ -28,7 +28,7 @@ static const char *vs[NUM_OF_PROGRAMS] =
     "  gl_Position  = a_Position;"
     "} "
     ,
-    /// 2.
+    /// 2. USE_UTIME
     "precision mediump float;"
     "attribute vec4    a_Position;"
     "uniform   vec4    u_color;"
@@ -42,6 +42,22 @@ static const char *vs[NUM_OF_PROGRAMS] =
     "  gl_Position  = a_Position;"
     // apply a little of zooming
 //    "  gl_Position.w -= ( abs(sin(u_time)) * .006 );"
+    "} "
+    ,
+    /// 3. 
+    "precision mediump float;"
+    "attribute vec4    a_Position;"
+    "uniform   vec4    u_color;"
+    "uniform   float   u_time;"
+    // use your own output instead of gl_FrontColor
+    "varying   vec4 fragColor;"
+    ""
+    "void main(void)"
+    "{"
+    "  fragColor    = u_color;"
+    "  gl_Position  = a_Position;"
+    // apply a little of zooming
+    "  gl_Position.w -= ( abs(sin(u_time)) * .01 );"
     "} "
 } ;
 
@@ -57,7 +73,18 @@ static const char *fs[NUM_OF_PROGRAMS] =
     "  gl_FragColor    = fragColor;"
      "} "
     ,
-    /// 2.
+    /// 2. USE_UTIME
+    "precision mediump float;"
+    "varying   vec4    fragColor;"
+    "uniform   float   u_time;"
+    ""
+    "void main(void)"
+    "{"
+    "  gl_FragColor    = fragColor;"
+    "  gl_FragColor.a *= abs(sin(u_time));"
+    "} "
+    ,
+    /// 3. 
     "precision mediump float;"
     "varying   vec4    fragColor;"
     "uniform   float   u_time;"
@@ -92,7 +119,7 @@ void on_GLES2_Update1(double time)
         // write the value to the shaders
         glUniform1f(glGetUniformLocation(glsl_Program[i], "u_time"), time);
     }
-    //printf("t:%.4f u_time:%.6f\n", t, frame);
+
 }
 
 void ORBIS_RenderFillRects_init( int width, int height )
@@ -143,7 +170,7 @@ void ORBIS_RenderDrawLines(//SDL_Renderer *renderer,
     /* emit a line for each point pair */
     for (int i = 0; i < count; i += 2) {
 #if 0
-        printf("%d, %d, %d %.3f,%.3f,%.3f,%.3f\n", 
+        log_info("%d, %d, %d %.3f,%.3f,%.3f,%.3f", 
             idx, count, count/2,
             points[idx   ].x, points[idx   ].y,
             points[idx +1].x, points[idx +1].y);
@@ -235,7 +262,7 @@ void GLES2_DrawFillingRect(vec4 *r, // float/normalized rectangle
                 double *percentage) // how much filled from left
 {   // shrink frect RtoL by_percentage
     r->z = r->x + (r->z - r->x) * (*percentage / 100.f);
-//  fprintf(INFO, "%.2f %.2f, %.2f, %.2f %f\n", r.x, r.y, r.z, r.w, dfp);
+//  log_info( "%.2f %.2f, %.2f, %.2f %f", r.x, r.y, r.z, r.w, dfp);
     ORBIS_RenderFillRects(USE_COLOR, c, r, 1);
 }
 
@@ -260,7 +287,7 @@ vec4 px_pos_to_normalized2(vec2 *pos, vec2 *size)
     n.xy  = 2. / resolution * (*pos) - 1.; // (-1,-1) is BOTTOMLEFT, (1,1) is UPRIGHT
     n.zw  = 2. / resolution * (*size);
     n.yw *= -1.; // flip Y axis!
-//  printf("%f,%f,%f,%f\n", n.x, n.y, n.w, n.w);
+//  log_info("%f,%f,%f,%f", n.x, n.y, n.w, n.w);
     return n;
 }
 

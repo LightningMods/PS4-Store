@@ -10,9 +10,6 @@
 
 #include <stdio.h>
 #include <string.h>
-//#include <libnetctl.h>
-//#include <net.h>
-//#include <message_dialog.h>
 #include <Http.h>
 #include <Ssl.h>
 #include <sys/_types.h>
@@ -27,54 +24,14 @@
 #	define ARRAY_SIZE(ar) (sizeof(ar) / sizeof((ar)[0]))
 #endif
 
-#if 0
-struct _SceKernelModuleSegmentInfo {
-	void* baseAddr;
-	uint32_t size;
-	int32_t prot;
-};
-typedef struct _SceKernelModuleSegmentInfo SceKernelModuleSegmentInfo;
-
-struct _SceKernelModuleInfo {
-	size_t size;
-	char name[SCE_KERNEL_MAX_NAME_LENGTH];
-	SceKernelModuleSegmentInfo segmentInfo[SCE_KERNEL_MAX_SEGMENTS];
-	uint32_t numSegments;
-	uint8_t fingerprint[SCE_KERNEL_NUM_FINGERPRINT];
-};
-
-typedef struct _SceKernelModuleInfo SceKernelModuleInfo;
-#endif
 
 #define IS_INTERNAL 0
 
-#if 0
-struct pl_ini_section_t;
-
-typedef struct pl_ini_file_t
-{
-	struct pl_ini_section_t* head;
-} pl_ini_file;
-#endif
-
-int msgok(int level, char* format, ...);
 int loadmsg(char* format, ...);
 int pingtest(int libnetMemId, int libhttpCtxId, const char* src);
-int download_file(int libnetMemId, int libhttpCtxId, const char* src, const char* dst);
 int32_t netInit(void);
-void logshit(char* format, ...);
-int loadModulesGl();
-void init_STOREGL_modules();
-int ioctl(int fd, unsigned long com, void* data);
-int pl_ini_load(pl_ini_file* file, const char* path);
-int pl_ini_get_string(const pl_ini_file* file, const char* section, const char* key, const char* default_value, char* copy_to, int dest_len);
-int jb();
-
 #define DIFFERENT_HASH 1
 #define SAME_HASH 0
-
-#define SSL_HEAP_SIZE	(304 * 1024)
-#define NET_HEAP_SIZE	(16 * 1024)
 
 #define DKS_TIMEOUT 0x804101E2
 
@@ -127,7 +84,7 @@ void logshit(char* format, ...);
 
 #define SSL_HEAP_SIZE	(304 * 1024)
 #define HTTP_HEAP_SIZE	(1024 * 1024)
-#define NET_HEAP_SIZE	(16 * 1024)
+#define NET_HEAP_SIZE   (1 * 1024 * 1024)
 #define TEST_USER_AGENT	"StoreHAX/GL"
 
 #define SCE_SYSMODULE_INTERNAL_SYS_CORE 0x80000004
@@ -145,8 +102,8 @@ void logshit(char* format, ...);
 #define SCE_SYSMODULE_INTERNAL_PRECOMPILED_SHADERS 0x80000064
 
 
-#define VERSION_MAJOR 1
-#define VERSION_MINOR 2
+#define VERSION_MAJOR 2
+#define VERSION_MINOR 00
 
 #define BUILD_YEAR_CH0 (__DATE__[ 7])
 #define BUILD_YEAR_CH1 (__DATE__[ 8])

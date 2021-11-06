@@ -71,7 +71,7 @@ static PngInfo read_and_update_info(const png_structp png_ptr, const png_infop i
 
     // Read the new color type after updates have been made.
     color_type = png_get_color_type(png_ptr, info_ptr);
- //printf("colortype %d\n", color_type);
+
     return (PngInfo) {width, height, color_type};
 }
 
@@ -90,11 +90,13 @@ static DataHandle read_entire_png_image(
     const png_uint_32 height) 
 {
     const png_size_t row_size = png_get_rowbytes(png_ptr, info_ptr);
-    const int data_length = row_size * height;
+    const int data_length = row_size * (height +1);
     assert(row_size > 0);
 
     png_byte* raw_image = malloc(data_length);
-    assert(raw_image != NULL);
+
+    if(raw_image == NULL)
+        log_error( "%s %p", __FUNCTION__, raw_image);
 
     png_byte* row_ptrs[height];
 
@@ -124,23 +126,21 @@ static GLenum get_gl_color_format(const int png_color_format) {
     return 0;
 }
 
-/* for image data */
-typedef struct {
-    const int width;
-    const int height;
-    const int size;
-    const GLenum gl_color_format;
-    const void* data;
-} RawImageData;
 
 /// main
 RawImageData get_raw_image_data_from_png(const void* png_data, const int png_data_size)
 {
+    if(png_data != NULL && png_data_size > 8)
+    {
+        
+    } else {
+        log_debug( "%s %p %d", __FUNCTION__, png_data, png_data_size);
+    }
+
     assert(png_data != NULL && png_data_size > 8);
     assert(png_check_sig((void*)png_data, 8));
 
-    png_structp png_ptr = png_create_read_struct(
-        PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
     assert(png_ptr != NULL);
     png_infop info_ptr = png_create_info_struct(png_ptr);
     assert(info_ptr != NULL);
@@ -149,7 +149,7 @@ RawImageData get_raw_image_data_from_png(const void* png_data, const int png_dat
     png_set_read_fn(png_ptr, &png_data_handle, read_png_data_callback);
 
     if (setjmp(png_jmpbuf(png_ptr))) {
-        printf("Error reading PNG file!\n");
+        log_info("Error reading PNG file!");
     }
 
     const PngInfo    png_info  = read_and_update_info(png_ptr, info_ptr);
@@ -166,14 +166,17 @@ RawImageData get_raw_image_data_from_png(const void* png_data, const int png_dat
         raw_image.data};
 }
 
-void release_raw_image_data(const RawImageData* data) {
-    assert(data != NULL);
-    free((void*)data->data);
+void release_raw_image_data(const RawImageData *data)
+{
+    if(data != NULL)
+    {
+        if(data->data) free((void*)data->data);
+    }
 }
 
 
 /// png format
-static GLuint load_texture(
+GLuint load_texture(
     const GLsizei width, const GLsizei height,
     const GLenum  type,  const GLvoid *pixels)
 {
@@ -184,12 +187,14 @@ static GLuint load_texture(
     // set texture filtering
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
     // generate texture from bitmap data
     glTexImage2D(GL_TEXTURE_2D, 0, type, width, height, 0, type, GL_UNSIGNED_BYTE, pixels);
     // don't create MipMaps, we must assert npot2!
     // glGenerateMipmap(GL_TEXTURE_2D);
     // release and return texture
     glBindTexture(GL_TEXTURE_2D, 0);
+
     return texture_object_id;
 }
 
@@ -205,17 +210,99 @@ GLuint load_png_asset_into_texture(const char* relative_path)
 #else
     const unsigned char *png_file     = orbisFileGetFileContent(relative_path);
 #endif
-    if(!png_file) return 0;
-    const RawImageData raw_image_data = get_raw_image_data_from_png(png_file, _orbisFile_lastopenFile_size);
-    const GLuint    texture_object_id = load_texture(raw_image_data.width, raw_image_data.height,
-                                                     raw_image_data.gl_color_format,
-                                                     raw_image_data.data);
-    // take note of image resolution size to setup VBO in px size
-    tex_size = (vec2){ raw_image_data.width, raw_image_data.height };
-    // delete buffers
-    release_raw_image_data(&raw_image_data);
-    //release_file_data(&png_file);
-    free((void*)png_file), png_file = NULL;
 
-    return texture_object_id;
+    // texture creation
+    if( png_file != NULL && _orbisFile_lastopenFile_size > 8)
+    {
+        const RawImageData raw_image_data = get_raw_image_data_from_png(png_file, _orbisFile_lastopenFile_size);
+        const GLuint    texture_object_id = load_texture(raw_image_data.width, raw_image_data.height,
+                                                         raw_image_data.gl_color_format,
+                                                         raw_image_data.data);
+        // take note of image resolution size to setup VBO in px size
+        tex_size = (vec2){ raw_image_data.width, raw_image_data.height };
+        // delete buffers
+        release_raw_image_data(&raw_image_data);
+        //release_file_data(&png_file);
+        free((void*)png_file), png_file = NULL;
+
+    //log_debug( "%s(%s) ret: %d", __FUNCTION__, relative_path, texture_object_id);
+
+        return texture_object_id;
+    }
+    else
+        log_debug( "%s(%s) FAILED!", __FUNCTION__, relative_path);
+
+    // no texture
+    return 0;
 }
+
+
+// with int (u32)
+void setRGB(png_byte *ptr, int *val)
+{
+    unsigned char *c = (void*)val;
+
+    ptr[0] = *c++; ptr[1] = *c++; ptr[2] = *c++;
+}
+
+int writeImage(char* filename, int width, int height, int *buffer, char* title)
+{
+    int code = 0;
+    FILE *fp = NULL;
+    png_structp png_ptr = NULL;
+    png_infop info_ptr = NULL;
+    png_bytep row = NULL;
+
+    // Open file for writing (binary mode)
+    fp = fopen(filename, "wb");
+    if (fp == NULL) { log_error( "Could not open file %s for writing", filename); code = 1; goto finalise; }
+
+    // Initialize write structure
+    png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    if (png_ptr == NULL) { log_error( "Could not allocate write struct"); code = 1; goto finalise; }
+    // Initialize info structure
+    info_ptr = png_create_info_struct(png_ptr);
+    if (info_ptr == NULL) { log_error( "Could not allocate info struct"); code = 1; goto finalise; }
+    // Setup Exception handling
+    if (setjmp(png_jmpbuf(png_ptr))) { log_error( "Error during png creation"); code = 1; goto finalise; }
+
+    png_init_io(png_ptr, fp);
+    // Write header (8 bit colour depth)
+    png_set_IHDR(png_ptr, info_ptr, width, height,
+            8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
+            PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
+    // Set title
+    if (title != NULL) {
+        png_text title_text;
+        title_text.compression = PNG_TEXT_COMPRESSION_NONE;
+        title_text.key = "Title";
+        title_text.text = title;
+        png_set_text(png_ptr, info_ptr, &title_text, 1);
+    }
+    png_write_info(png_ptr, info_ptr);
+
+    // Allocate memory for one row (3 bytes per pixel - RGB)
+    row = (png_bytep) calloc(3 * width +1, sizeof(png_byte));
+
+    // Write image data
+    int x, y;
+    // note we flip vertically here!
+    for (y=height ; y>-1 ; y--) {
+        for (x=0 ; x<width ; x++) {
+            setRGB(&(row[ x*3 ]), &buffer[y * width + x]); // converts RGBA to RGB
+        }
+        png_write_row(png_ptr, row);
+    }
+    // End write
+    png_write_end(png_ptr, NULL);
+
+finalise:
+
+    if (fp) fclose(fp);
+    if (info_ptr) png_free_data(png_ptr, info_ptr, PNG_FREE_ALL, -1);
+    if (png_ptr) png_destroy_write_struct(&png_ptr, (png_infopp)NULL);
+    if (row) free(row);
+
+    return code;
+}
+
