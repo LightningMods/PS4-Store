@@ -2,198 +2,359 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdarg.h>
+
+static uintptr_t prison0;
+static uintptr_t rootvnode;
 
 
-uint16_t g_firmware = 0;
+enum { EINVAL = 22 };
 
-int kexec(void* func, void *user_arg) { return syscall(11, func, user_arg); }
-
-
-static inline __attribute__((always_inline)) uint64_t __readmsr(unsigned long __register) {
-  unsigned long __edx;
-  unsigned long __eax;
-  __asm__("rdmsr"
-          : "=d"(__edx), "=a"(__eax)
-          : "c"(__register));
-  return (((uint64_t)__edx) << 32) | (uint64_t)__eax;
-}
+struct iovec
+{
+    const void* ptr;
+    size_t size;
+};
 
 
-
-char* (*sceKernelGetFsSandboxRandomWord_1)() = NULL;
-
-uint16_t get_firmware() {
-  if (g_firmware) {
-    return g_firmware;
-  }
-  uint16_t ret;            // Numerical representation of the firmware version. ex: 505 for 5.05, 702 for 7.02, etc
-  uint32_t offset;         // Offset for ealier firmware's version location
-  char binary_fw[2] = {0}; // 0x0000
-  char string_fw[5] = {0}; // "0000\0"
-  char sandbox_path[33];   // `/XXXXXXXXXX/common/lib/libc.sprx` [Char count of 32 + nullterm]
-  int sys;
-
-  
-  sys = sceKernelLoadStartModule("libkernel_sys.sprx", 0, 0, 0, 0, 0);
-  ret = sceKernelDlsym(sys, "sceKernelGetFsSandboxRandomWord", (void**)&sceKernelGetFsSandboxRandomWord_1);
-  if (ret)
-  {
-
-     sys = sceKernelLoadStartModule("libkernel.sprx", 0, 0, 0, 0, 0);
-     ret = sceKernelDlsym(sys, "sceKernelGetFsSandboxRandomWord", (void**)&sceKernelGetFsSandboxRandomWord_1);
-     if (ret) return -2;
-		
-   }
+SYSCALL(12, static int chdir(char* path))
+SYSCALL(22, static int unmount(const char* path, int flags))
+SYSCALL(136, static int mkdir(const char* path, int mode))
+SYSCALL(137, static int rmdir(const char* path))
+SYSCALL(326, static int getcwd(char* buf, size_t sz))
+SYSCALL(378, static int nmount(struct iovec* iov, unsigned int niov, int flags))
 
 
-
-  snprintf(sandbox_path, sizeof(sandbox_path), "/%s/common/lib/libc.sprx", sceKernelGetFsSandboxRandomWord_1());
-
-  int fd = open(sandbox_path, O_RDONLY, 0);
-  if (fd < 0) {
-    // Assume it's currently jailbroken
-    fd = open("/system/common/lib/libc.sprx", O_RDONLY, 0);
-    if (fd < 0) {
-      // It's really broken
-      return -1;
+void jbc_run_as_root(void(*fn)(void* arg), void* arg, int cwd_mode)
+{
+    struct jbc_cred cred;
+    jbc_get_cred(&cred);
+    struct jbc_cred root_cred = cred;
+    jbc_jailbreak_cred(&root_cred);
+    switch (cwd_mode)
+    {
+    case CWD_KEEP:
+    default:
+        root_cred.cdir = cred.cdir;
+        break;
+    case CWD_ROOT:
+        root_cred.cdir = cred.rdir;
+        break;
+    case CWD_RESET:
+        root_cred.cdir = root_cred.rdir;
+        break;
     }
-  }
-
-  lseek(fd, 0x240, SEEK_SET); // 0x240 for 1.01 -> ?.??, 0x2B0 for ?.?? (5.05) -> ???
-  read(fd, &offset, sizeof(offset));
-
-  if (offset == 0x50E57464) { // "Påtd"
-    lseek(fd, 0x334, SEEK_SET);
-  } else {
-    lseek(fd, 0x374, SEEK_SET);
-  }
-
-  read(fd, &binary_fw,  sizeof(binary_fw));
-  close(fd);
-
-  snprintf_s(string_fw, sizeof(string_fw), "%02x%02x", binary_fw[1], binary_fw[0]);
-
-  ret = atoi(string_fw);
-
-  g_firmware = ret;
-  return ret;
+    jbc_set_cred(&root_cred);
+    fn(arg);
+    jbc_set_cred(&cred);
 }
 
 
-int kpayload_dump(struct thread *td, struct kpayload_dump_args *args) {
-  UNUSED(td);
-  void *kernel_base;
+static void do_mount_in_sandbox(void* op)
+{
+    struct mount_in_sandbox_param* p = op;
+    char path[MAX_PATH + 1];
+    path[MAX_PATH] = 0;
+    int error;
+    if ((error = getcwd(path, MAX_PATH)))
+        goto err_out;
+    size_t l1 = 0;
+    while (path[l1])
+        l1++;
+    size_t l2 = 0;
+    while (p->name[l2])
+        l2++;
+    if (l1 + l2 + 1 >= MAX_PATH)
+        goto invalid;
+    path[l1] = '/';
+    int dots = 1;
+    for (size_t i = 0; i <= l2; i++)
+    {
+        if (p->name[i] == '/')
+            goto invalid;
+        else if (p->name[i] != '.')
+            dots = 0;
+        path[l1 + 1 + i] = p->name[i];
+    }
+    if (dots && l2 <= 2)
+        goto invalid;
+    if (p->path) //mount operation
+    {
+        if ((error = mkdir(path, 0777)))
+            goto err_out;
+        size_t l3 = 0;
+        while (p->path[l3])
+            l3++;
+        struct iovec data[6] = {
+            {"fstype", 7}, {"nullfs", 7},
+            {"fspath", 7}, {path, l1 + l2 + 2},
+            {"target", 7}, {p->path, l3 + 1},
+        };
+        if ((error = nmount(data, 6, 0)))
+        {
+            rmdir(path);
+            goto err_out;
+        }
+    }
+    else //unmount operation
+    {
+        if ((error = unmount(path, 0)))
+            goto err_out;
+        if ((error = rmdir(path)))
+            goto err_out;
+    }
+    return;
+invalid:
+    error = EINVAL;
+err_out:
+    p->ans = error;
+}
 
-  int (*copyout)(const void *kaddr, void *uaddr, size_t len);
+int jbc_mount_in_sandbox(const char* system_path, const char* mnt_name)
+{
+    struct mount_in_sandbox_param op = {
+        .path = system_path,
+        .name = mnt_name,
+        .ans = 0,
+    };
+    jbc_run_as_root(do_mount_in_sandbox, &op, CWD_ROOT);
+    return op.ans;
+}
 
-  uint16_t fw_version = args->kpayload_dump_info->fw_version;
+int jbc_unmount_in_sandbox(const char* mnt_name)
+{
+    return jbc_mount_in_sandbox(0, mnt_name);
+}
 
-  // NOTE: This is a C preprocessor macro
-  build_kpayload(fw_version, copyout_macro);
+static int k_kcall(void* td, uint64_t** uap)
+{
+    uint64_t* args = uap[1];
+    args[0] = ((uint64_t(*)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t))args[0])(args[1], args[2], args[3], args[4], args[5], args[6]);
+    return 0;
+}
 
-  uint64_t kaddr = args->kpayload_dump_info->kaddr;
-  uint64_t uaddr = args->kpayload_dump_info->uaddr;
-  size_t size = args->kpayload_dump_info->size;
+asm("kexec:\nmov $11, %rax\nmov %rcx, %r10\nsyscall\nret");
+void kexec(void*, void*);
 
-  int ret = copyout((uint64_t *)kaddr, (uint64_t *)uaddr, size);
+uint64_t jbc_krw_kcall(uint64_t fn, ...)
+{
+    va_list v;
+    va_start(v, fn);
+    uint64_t uap[7] = { fn };
+    for (int i = 1; i <= 6; i++)
+        uap[i] = va_arg(v, uint64_t);
+    kexec(k_kcall, uap);
+    return uap[0];
+}
 
-  if (ret == -1) {
-    memset((uint64_t *)uaddr, 0, size);
-  }
+asm("k_get_td:\nmov %gs:0, %rax\nret");
+extern char k_get_td[];
 
-  return ret;
+uintptr_t jbc_krw_get_td(void)
+{
+    return jbc_krw_kcall((uintptr_t)k_get_td);
+}
+
+static int have_mira = -1;
+static int mira_socket[2];
+
+static int do_check_mira(void)
+{
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, mira_socket))
+        return 0;
+    if (write(mira_socket[1], (void*)jbc_krw_get_td(), 1) == 1)
+    {
+        char c;
+        read(mira_socket[0], &c, 1);
+        return 1;
+    }
+    return 0;
+}
+
+static inline bool check_mira(void)
+{
+    if (have_mira < 0)
+        have_mira = do_check_mira();
+    return (bool)have_mira;
+}
+
+static inline bool check_ptr(uintptr_t p, KmemKind kind)
+{
+    if (kind == USERSPACE)
+        return p < 0x800000000000;
+    else if (kind == KERNEL_HEAP)
+        return p >= 0xffff800000000000 && p < 0xffffffff00000000;
+    else if (kind == KERNEL_TEXT)
+        return p >= 0xffffffff00000000 && p < 0xfffffffffffff000;
+    else
+        return false;
+}
+
+static int kcpy_mira(uintptr_t dst, uintptr_t src, size_t sz)
+{
+    while (sz > 0)
+    {
+        size_t chk = (sz > 64 ? 64 : sz);
+        if (write(mira_socket[1], (void*)src, chk) != chk)
+            return -1;
+        if (read(mira_socket[0], (void*)dst, chk) != chk)
+            return -1;
+        dst += chk;
+        src += chk;
+        sz -= chk;
+    }
+    return 0;
+}
+
+asm("k_kcpy:\nmov %rdx, %rcx\nrep movsb\nret");
+extern char k_kcpy[];
+
+int jbc_krw_memcpy(uintptr_t dst, uintptr_t src, size_t sz, KmemKind kind)
+{
+    if (sz == 0)
+        return 0;
+    bool u1 = check_ptr(dst, USERSPACE) && check_ptr(dst + sz - 1, USERSPACE);
+    bool ok1 = check_ptr(dst, kind) && check_ptr(dst + sz - 1, kind);
+    bool u2 = check_ptr(src, USERSPACE) && check_ptr(src + sz - 1, USERSPACE);
+    bool ok2 = check_ptr(src, kind) && check_ptr(src + sz - 1, kind);
+    if (!((u1 || ok1) && (u2 || ok2)))
+        return -1;
+    if (u1 && u2)
+        return -1;
+    if (check_mira())
+        return kcpy_mira(dst, src, sz);
+    jbc_krw_kcall((uintptr_t)k_kcpy, dst, src, sz);
+    return 0;
+}
+
+uint64_t jbc_krw_read64(uintptr_t p, KmemKind kind)
+{
+    uint64_t ans;
+    if (jbc_krw_memcpy((uintptr_t)&ans, p, sizeof(ans), kind))
+        return -1;
+    return ans;
+}
+
+int jbc_krw_write64(uintptr_t p, KmemKind kind, uintptr_t val)
+{
+    return jbc_krw_memcpy(p, (uintptr_t)&val, sizeof(val), kind);
 }
 
 
-int kpayload_kbase(struct thread *td, struct kpayload_kbase_args *args) {
-  UNUSED(td);
-  void *kernel_base;
-
-  int (*copyout)(const void *kaddr, void *uaddr, size_t len);
-
-  uint16_t fw_version = args->kpayload_kbase_info->fw_version;
-
-  // NOTE: This is a C preprocessor macro
-  build_kpayload(fw_version, copyout_macro);
-
-  uint64_t uaddr = args->kpayload_kbase_info->uaddr;
-  copyout(&kernel_base, (uint64_t *)uaddr, 8);
-
-  return 0;
+static int resolve(void)
+{
+restart:;
+    uintptr_t td = jbc_krw_get_td();
+    uintptr_t proc = jbc_krw_read64(td + 8, KERNEL_HEAP);
+    for (;;)
+    {
+        int pid;
+        if (jbc_krw_memcpy((uintptr_t)&pid, proc + 0xb0, sizeof(pid), KERNEL_HEAP))
+            goto restart;
+        if (pid == 1)
+            break;
+        uintptr_t proc2 = jbc_krw_read64(proc, KERNEL_HEAP);
+        uintptr_t proc1 = jbc_krw_read64(proc2 + 8, KERNEL_HEAP);
+        if (proc1 != proc)
+            goto restart;
+        proc = proc2;
+    }
+    uintptr_t pid1_ucred = jbc_krw_read64(proc + 0x40, KERNEL_HEAP);
+    uintptr_t pid1_fd = jbc_krw_read64(proc + 0x48, KERNEL_HEAP);
+    if (jbc_krw_memcpy((uintptr_t)&prison0, pid1_ucred + 0x30, sizeof(prison0), KERNEL_HEAP))
+        return -1;
+    if (jbc_krw_memcpy((uintptr_t)&rootvnode, pid1_fd + 0x18, sizeof(rootvnode), KERNEL_HEAP))
+    {
+        prison0 = 0;
+        return -1;
+    }
+    return 0;
 }
 
-
-
-
-
-uint64_t get_kernel_base() {
-  uint64_t kernel_base;
-  uint64_t *kernel_base_ptr = mmap(NULL, 8, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0); // Allocate a buffer in userland
-  struct kpayload_kbase_info kpayload_kbase_info;
-  kpayload_kbase_info.fw_version = get_firmware();
-  kpayload_kbase_info.uaddr = (uint64_t)kernel_base_ptr;
-  kexec(&kpayload_kbase, &kpayload_kbase_info);
-  memcpy(&kernel_base, kernel_base_ptr, 8);
-  munmap(kernel_base_ptr, 8);
-  return kernel_base;
+uintptr_t jbc_get_prison0(void)
+{
+    if (!prison0)
+        resolve();
+    return prison0;
 }
 
-int get_memory_dump(uint64_t kaddr, uint64_t *uaddr, size_t size) {
-  struct kpayload_dump_info kpayload_dump_info;
-  kpayload_dump_info.fw_version = get_firmware();
-  kpayload_dump_info.kaddr = kaddr;
-  kpayload_dump_info.uaddr = (uint64_t)uaddr;
-  kpayload_dump_info.size = size;
-  kexec(&kpayload_dump, &kpayload_dump_info);
-  return 0;
+uintptr_t jbc_get_rootvnode(void)
+{
+    if (!rootvnode)
+        resolve();
+    return rootvnode;
 }
 
-int kpayload_jailbreak(struct thread *td, struct kpayload_firmware_args *args) {
-  struct filedesc *fd;
-  struct ucred *cred;
-  fd = td->td_proc->p_fd;
-  cred = td->td_proc->p_ucred;
-
-  void *kernel_base;
-  uint8_t *kernel_ptr;
-  void **prison0;
-  void **rootvnode;
-
-  uint16_t fw_version = args->kpayload_firmware_info->fw_version;
-
-  // NOTE: This is a C preprocessor macro
-  build_kpayload(fw_version, jailbreak_macro);
-
-  cred->cr_uid = 0;
-  cred->cr_ruid = 0;
-  cred->cr_rgid = 0;
-  cred->cr_groups[0] = 0;
-
-  cred->cr_prison = *prison0;
-  fd->fd_rdir = fd->fd_jdir = *rootvnode;
-
-  void *td_ucred = *(void **)(((char *)td) + 304);
-
-  uint64_t *sonyCred = (uint64_t *)(((char *)td_ucred) + 96);
-  *sonyCred = 0xffffffffffffffff;
-
-  uint64_t *sceProcessAuthorityId = (uint64_t *)(((char *)td_ucred) + 88);
-  *sceProcessAuthorityId = 0x3801000000000013;
-
-  uint64_t *sceProcCap = (uint64_t *)(((char *)td_ucred) + 104);
-  *sceProcCap = 0xffffffffffffffff;
-
-  return 0;
+static inline int ppcopyout(void* u1, void* u2, uintptr_t k)
+{
+    return jbc_krw_memcpy((uintptr_t)u1, k, (uintptr_t)u2 - (uintptr_t)u1, KERNEL_HEAP);
 }
 
+static inline int ppcopyin(const void* u1, const void* u2, uintptr_t k)
+{
+    return jbc_krw_memcpy(k, (uintptr_t)u1, (uintptr_t)u2 - (uintptr_t)u1, KERNEL_HEAP);
+}
+int jbc_get_cred(struct jbc_cred* ans)
+{
+    uintptr_t td = jbc_krw_get_td();
+    uintptr_t proc = jbc_krw_read64(td + 8, KERNEL_HEAP);
+    uintptr_t ucred = jbc_krw_read64(proc + 0x40, KERNEL_HEAP);
+    uintptr_t fd = jbc_krw_read64(proc + 0x48, KERNEL_HEAP);
+
+    if (ppcopyout(&ans->uid, 1 + &ans->svuid, ucred + 4)
+        || ppcopyout(&ans->rgid, 1 + &ans->svgid, ucred + 20)
+        || ppcopyout(&ans->prison, 1 + &ans->prison, ucred + 0x30)
+        || ppcopyout(&ans->cdir, 1 + &ans->jdir, fd + 0x10)
+        || ppcopyout(&ans->sceProcType, 1 + &ans->sceProcCap, ucred + 88))
+        return -1;
+
+    return 0;
+}
+
+int jbc_set_cred(const struct jbc_cred* ans)
+{
+    uintptr_t td = jbc_krw_get_td();
+    uintptr_t proc = jbc_krw_read64(td + 8, KERNEL_HEAP);
+    uintptr_t ucred = jbc_krw_read64(proc + 0x40, KERNEL_HEAP);
+    uintptr_t fd = jbc_krw_read64(proc + 0x48, KERNEL_HEAP);
+
+
+    if (ppcopyin(&ans->uid, 1 + &ans->svuid, ucred + 4)
+        || ppcopyin(&ans->rgid, 1 + &ans->svgid, ucred + 20)
+        || ppcopyin(&ans->prison, 1 + &ans->prison, ucred + 0x30)
+        || ppcopyin(&ans->cdir, 1 + &ans->jdir, fd + 0x10)
+        || ppcopyin(&ans->sceProcType, 1 + &ans->sceProcCap, ucred + 88))
+        return -1;
+    return 0;
+}
+
+int jbc_jailbreak_cred(struct jbc_cred* ans)
+{
+    uintptr_t prison0 = jbc_get_prison0();
+    if (!prison0)
+        return -1;
+    uintptr_t rootvnode = jbc_get_rootvnode();
+    if (!rootvnode)
+        return -1;
+
+    //without some modules wont load like Apputils
+    ans->sceProcCap = 0xffffffffffffffff;
+    ans->sceProcType = 0x3801000000000013;
+    ans->sonyCred = 0xffffffffffffffff;
+
+    ans->uid = ans->ruid = ans->svuid = ans->rgid = ans->svgid = 0;
+    ans->prison = prison0;
+    ans->cdir = ans->rdir = ans->jdir = rootvnode;
+    return 1;
+}
 
 
 int jailbreak_multi() {
-  struct kpayload_firmware_info kpayload_firmware_info;
-  kpayload_firmware_info.fw_version = get_firmware();
-  if(kexec(&kpayload_jailbreak, &kpayload_firmware_info) == 0);
-       printf("^^^^^^^^^^^ Jailbroke! FW: %i\n", kpayload_firmware_info.fw_version);
 
-  return 0;
+  struct jbc_cred ans;
+  jbc_jailbreak_cred(&ans);
+  return jbc_set_cred(&ans);
 }
 

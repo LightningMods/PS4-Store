@@ -29,8 +29,8 @@ CPPFILES 	:= $(wildcard $(SDIR)/*.cpp)
 OBJS 		:= $(patsubst $(SDIR)/%.c, $(ODIR)/%.o, $(CFILES)) $(patsubst $(SDIR)/%.cpp, $(ODIR)/%.o, $(CPPFILES))
 STUBOBJS 	:= $(patsubst $(SDIR)/%.c, $(ODIR)/%.o.stub, $(CFILES)) $(patsubst $(SDIR)/%.cpp, $(ODIR)/%.o.stub, $(CPPFILES))
 
-TARGET = libExample.prx
-TARGETSTUB = libExample_stub.so
+TARGET = rsa.prx
+TARGETSTUB = rsa.so
 
 # Create the intermediate directory incase it doesn't already exist.
 _unused := $(shell mkdir -p $(INTDIR))

@@ -24,17 +24,6 @@
 #	define ARRAY_SIZE(ar) (sizeof(ar) / sizeof((ar)[0]))
 #endif
 
-
-int msgok(char* format, ...);
-int loadmsg(char* format, ...);
-int pingtest(int libnetMemId, int libhttpCtxId, const char* src);
-int download_file(int libnetMemId, int libhttpCtxId, const char* src, const char* dst);
-int32_t netInit(void);
-void logshit(char* format, ...);
-void init_STOREGL_modules();
-int pl_ini_load(pl_ini_file* file, const char* path);
-int pl_ini_get_string(const pl_ini_file* file, const char* section, const char* key, const char* default_value, char* copy_to, int dest_len);
-
 #define DIFFERENT_HASH 1
 #define SAME_HASH 0
 
@@ -43,8 +32,7 @@ int pl_ini_get_string(const pl_ini_file* file, const char* section, const char* 
 
 #define DKS_TIMEOUT 0x804101E2
 
-
-#define klog printf
+#define DGB_CHANNEL_TTYL 0
 
 #define TRUE 1
 #define FALSE 0
@@ -211,3 +199,16 @@ void logshit(char* format, ...);
 #define VERSION_MINOR_INIT \
     (VERSION_MINOR + '0')
 #endif
+
+
+int msgok(char* format, ...);
+int loadmsg(char* format, ...);
+int pingtest(int libnetMemId, int libhttpCtxId, const char* src);
+int download_file(int libnetMemId, int libhttpCtxId, const char* src, const char* dst);
+int32_t netInit(void);
+void logshit(char* format, ...);
+void init_STOREGL_modules();
+int pl_ini_load(pl_ini_file* file, const char* path);
+int pl_ini_get_string(const pl_ini_file* file, const char* section, const char* key, const char* default_value, char* copy_to, int dest_len);
+int sceKernelDebugOutText(int DBG_CHANNEL, const char* text);
+

@@ -3,16 +3,14 @@
 #include <string.h>
 #include <errno.h>
 #include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <sys/ioctl.h>
-
-
-
-#include <sys/types.h>
 #include <unistd.h>
 #include <orbis/libkernel.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include "mira_header.h"
+
+#define ENABLE_MIRA_API 0
 
  extern "C"
 {
@@ -79,15 +77,13 @@ int jailbreak_me(void)
 
      int ret = JAILBREAK_FAILED;    
 
-
-     if (ret = mira_jailbreak() == JAILBREAK_FAILED)
-     {
-        printf("Mira JB Failed going to plan B\n");
+#if ENABLE_MIRA_API==1
+     if (mira_jailbreak() == JAILBREAK_FAILED)
+#endif
         ret = jailbreak_multi();
         
-       
 
-     }
+     
 
 
     return ret;

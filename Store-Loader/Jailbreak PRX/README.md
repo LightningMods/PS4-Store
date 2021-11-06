@@ -1,6 +1,6 @@
 # Sample: Jailbreak PRX
 
-[![Version](https://img.shields.io/badge/Version-1.00-brightgreen.svg)](https://github.com/Cryptogenic/OpenOrbis-PS4-Toolchain)
+[![Version](https://img.shields.io/badge/Version-1.01-brightgreen.svg)](https://github.com/Cryptogenic/OpenOrbis-PS4-Toolchain)
 
 This project contains example code for creating a library with a Jailbreak function. It will generate an output .prx (Playstation Relocatable Executable) for the PS4, as well as a stub .so shared object file for linking on the PC side.
 
@@ -38,14 +38,14 @@ The ELF, Orbis ELF (OELF), and object files will all be stored in the intermedia
 
 ## Libraries used
 
-- libc
+- libSceLibcInternal
 - libkernel
 
 
 
 ## Building
 
-A visual studio project has been included for building on Windows. On Linux, a makefile has been included.
+On Linux, a makefile has been included.
 
 To build this project, the developer will need clang, which is provided in the toolchain. The `OO_PS4_TOOLCHAIN` environment variable will also need to be set to the root directory of the SDK installation.
 
@@ -58,10 +58,10 @@ make
 
 ## Reference(s) used
 
-PS4-Payload-SDK - https://github.com/Scene-Collective/ps4-payload-sdk/
+Libjbc - https://github.com/sleirsgoevy/ps4-libjbc
 
 
 ## Author(s)
 - LM
-- Alazif
+- Sleirsgoevy
 - Specter

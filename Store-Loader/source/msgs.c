@@ -1,12 +1,12 @@
 #include "Header.h"
 #include <stdarg.h>
-
-#define ORBIS_TRUE 1
 #include <MsgDialog.h>
+#define ORBIS_TRUE 1
+
 
 int msgok(char* format, ...)
 {
-        int ret = 0;
+    int ret = 0;
 	sceSysmoduleLoadModule(ORBIS_SYSMODULE_MESSAGE_DIALOG);
 
 	sceMsgDialogTerminate();
@@ -36,7 +36,7 @@ int msgok(char* format, ...)
 	param.userMsgParam = &userMsgParam;
 
 	if (sceMsgDialogOpen(&param) < 0)
-           klog("MsgD failed\n"); ret = -1;	
+           ret = -1;	
 	
 
 	OrbisCommonDialogStatus stat;
@@ -50,7 +50,7 @@ int msgok(char* format, ...)
 			memset(&result, 0, sizeof(result));
 
 			if (0 > sceMsgDialogGetResult(&result))
-                         klog("MsgD failed\n"); ret = -2;
+                        ret = -2;
 
 			sceMsgDialogTerminate();
 			break;
@@ -73,8 +73,6 @@ int loadmsg(char* format, ...)
 	va_start(args, format);
 	vsprintf(buff, format, args);
 	va_end(args);
-
-	// int32_t	ret = 0;_sceCommonDialogBaseParamInit
 
 	OrbisMsgDialogButtonsParam buttonsParam;
 	OrbisMsgDialogUserMessageParam messageParam;
@@ -156,11 +154,11 @@ int progstart(char* msg)
 
 	ret = sceMsgDialogTerminate();
 
-	klog("sceMsgDialogTerminate = %i\n", ret);
+	logshit("sceMsgDialogTerminate = %i\n", ret);
 
 	ret = sceMsgDialogInitialize();
 
-	klog("sceMsgDialogInitialize = %i\n", ret);
+	logshit("sceMsgDialogInitialize = %i\n", ret);
 
 
 	OrbisMsgDialogParam dialogParam;
@@ -202,7 +200,7 @@ int download_file(int libnetMemId, int libhttpCtxId, const char* src, const char
 		goto error;
 	}
 	int conn = ret;
-	// ret = sceHttpSendRequest(req, NULL, 0);
+
 	ret = sceHttpCreateRequestWithURL(conn, 0, src, 0);
 	if (ret < 0)
 	{
@@ -213,17 +211,14 @@ int download_file(int libnetMemId, int libhttpCtxId, const char* src, const char
 
 	ret = sceHttpSendRequest(req, NULL, 0);
 	if (ret < 0)
-	{
-		{
-			goto error;
-		}
-	}
+       goto error;
+		
+	
 
 	ret = sceHttpGetStatusCode(req, &statusCode);
 	if (ret < 0 || statusCode != 200)
-	{
-		goto error;
-	}
+       goto error;
+	
 
 	logshit("[STORE_GL_Loader:%s:%i] ----- statusCode: %i ---\n", __FUNCTION__, __LINE__, statusCode);
 
@@ -234,46 +229,37 @@ int download_file(int libnetMemId, int libhttpCtxId, const char* src, const char
 	if (ret < 0)
 	{
 		logshit("[STORE_GL_Loader:%s:%i] ----- sceHttpGetContentLength() error: %i ---\n", __FUNCTION__, __LINE__, ret);
-		//msgok("Connection Error\n\n The PS4 has Reported the Error 0x%08X\n\n Join Our Discord for Support", ret);
 		goto error;
 	}
 	else
 	{
 		if (contentLengthType == ORBIS_HTTP_CONTENTLEN_EXIST)
-		{
-			logshit("[STORE_GL_Loader:%s:%i] ----- Content-Length = %lu ---\n", __FUNCTION__, __LINE__, contentLength);
-		}
+		     logshit("[STORE_GL_Loader:%s:%i] ----- Content-Length = %lu ---\n", __FUNCTION__, __LINE__, contentLength);
+		
 	}
 	if (statusCode == 200)
 	{
 		char buf[1024];
 
-		progstart("start");
+		progstart("Starting Download");
 
 		int fd = sceKernelOpen(dst, O_WRONLY | O_CREAT, 0777);
-		// fchmod(fd, 777);
 		int total_read = 0;
 		if (fd < 0)
-		{
-			return fd;
-		}
-
+		    return fd;
+		
 		while (1)
 		{
 			int read = sceHttpReadData(req, buf, sizeof(buf));
 			if (read < 0)
-			{
-				return read;
-			}
+			   return read;
+			
 			if (read == 0)
 				break;
 			ret = sceKernelWrite(fd, buf, read);
 			if (ret < 0 || ret != read)
-			{
-				if (ret < 0)
-					return ret;
-				return -1;
-			}
+				 return ret;
+			
 			total_read += read;
 
 			uint32_t g_progress = (uint32_t)(((float)total_read / contentLength) * 100.f);
@@ -282,9 +268,7 @@ int download_file(int libnetMemId, int libhttpCtxId, const char* src, const char
 			{
 				sprintf(buf, "Downloading...\n\n %s\n Size: %lld", dst, contentLength);
 				sceMsgDialogProgressBarSetValue(0, g_progress);
-
 				sceMsgDialogProgressBarSetMsg(0, buf);
-
 			}
 		}
 		ret = sceKernelClose(fd);
@@ -306,9 +290,6 @@ clean:
 	sceHttpDeleteRequest(req);
 	sceHttpDeleteConnection(conn);
 	sceHttpDeleteTemplate(tpl);
-
-
-
 	sceMsgDialogTerminate();
 
 

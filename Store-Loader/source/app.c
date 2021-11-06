@@ -16,9 +16,9 @@ void logshit(char* format, ...)
 	vsprintf(buff, format, args);
 	va_end(args);
 
-	printf(buff);
+	sceKernelDebugOutText(DGB_CHANNEL_TTYL, buff);
 
-	int fd = sceKernelOpen("/data/Loader_Logs.txt", O_WRONLY | O_CREAT | O_APPEND, 0777);
+	int fd = sceKernelOpen("/user/app/NPXS39041/logs/loader.log", O_WRONLY | O_CREAT | O_APPEND, 0777);
 	if (fd >= 0)
 	{
 		sceKernelWrite(fd, buff, strlen(buff));
@@ -30,29 +30,28 @@ void init_STOREGL_modules()
 {
 	
 	sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_SYSTEM_SERVICE);
-	klog("[DEBUG] Started Internal Module SCE_SYSMODULE_INTERNAL_SYSTEM_SERVICE\n");
+	logshit("[DEBUG] Started Internal Module SCE_SYSMODULE_INTERNAL_SYSTEM_SERVICE\n");
 	sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_USER_SERVICE);
-	klog("[DEBUG] Started Internal Module SCE_SYSMODULE_INTERNAL_USER_SERVICE\n");
+	logshit("[DEBUG] Started Internal Module SCE_SYSMODULE_INTERNAL_USER_SERVICE\n");
 	sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_NETCTL);
-	klog("[DEBUG] Started Internal Module SCE_SYSMODULE_INTERNAL_NETCTL\n");
+	logshit("[DEBUG] Started Internal Module SCE_SYSMODULE_INTERNAL_NETCTL\n");
 	sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_NET);
-	klog("[DEBUG] Started Internal Module SCE_SYSMODULE_INTERNAL_NET\n");
-	//sceKernelLoadStartModule("/app0/Media/libSceHttp.sprx", 0, 0, 0, 0, 0);
+	logshit("[DEBUG] Started Internal Module SCE_SYSMODULE_INTERNAL_NET\n");
 	sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_HTTP);
-	klog("[DEBUG] Started Internal Module SCE_SYSMODULE_INTERNAL_HTTP\n");
+	logshit("[DEBUG] Started Internal Module SCE_SYSMODULE_INTERNAL_HTTP\n");
 	sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_SSL);
-	klog("[DEBUG] Started Internal Module SCE_SYSMODULE_INTERNAL_SSL\n");
+	logshit("[DEBUG] Started Internal Module SCE_SYSMODULE_INTERNAL_SSL\n");
 	sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_SYS_CORE);
-	klog("[DEBUG] Started Internal Module SCE_SYSMODULE_INTERNAL_SYS_CORE\n");
+	logshit("[DEBUG] Started Internal Module SCE_SYSMODULE_INTERNAL_SYS_CORE\n");
 	sceSysmoduleLoadModuleInternal(0x80000018);
-	klog("[DEBUG] Started Internal Module 0x80000018\n");
+	logshit("[DEBUG] Started Internal Module 0x80000018\n");
 	sceSysmoduleLoadModuleInternal(0x80000026);  // 0x80000026
-	klog("[DEBUG] Started Internal Module libSceSysUtil_SYSMODULE_INTERNAL_NETCTL\n");
+	logshit("[DEBUG] Started Internal Module libSceSysUtil_SYSMODULE_INTERNAL_NETCTL\n");
 	sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_BGFT);  // 0x80000026
-	klog("[DEBUG] Started Internal Module SCE_SYSMODULE_INTERNAL_BGFT\n");
+	logshit("[DEBUG] Started Internal Module SCE_SYSMODULE_INTERNAL_BGFT\n");
 	sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_APPINSTUTIL);  // 0x80000026 0x80000037
-	klog("[DEBUG] Started Internal Module SCE_SYSMODULE_INTERNAL_APPINSTUTIL\n");
-        sceSysmoduleLoadModule(ORBIS_SYSMODULE_MESSAGE_DIALOG);
+	logshit("[DEBUG] Started Internal Module SCE_SYSMODULE_INTERNAL_APPINSTUTIL\n");
+    sceSysmoduleLoadModule(ORBIS_SYSMODULE_MESSAGE_DIALOG);
 }
 
 

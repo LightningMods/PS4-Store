@@ -106,17 +106,16 @@ int copyFile(char* sourcefile, char* destfile)
 			sceKernelClose(out);
 		}
 		else
-		{
-			return -1;
-                logshit("[STORE_GL_Loader:%s:%i] ----- out fd = %i---\n", __FUNCTION__, __LINE__, out);
-		}
+           return -1;
+
+		
 		sceKernelClose(src);
 		return 0;
 	}
 	else
 	{
 		logshit("[ELFLOADER] fuxking error\n");
-                logshit("[STORE_GL_Loader:%s:%i] ----- src fd = %i---\n", __FUNCTION__, __LINE__, src);
+        logshit("[STORE_GL_Loader:%s:%i] ----- src fd = %i---\n", __FUNCTION__, __LINE__, src);
 		return -1;
 	}
 }
@@ -278,8 +277,6 @@ msgok("Update Required\n");
 int main()
 {
 
-     ret = sceKernelIccSetBuzzer(1);
-
 	init_STOREGL_modules();
 
 	int libjb = -1, librsa = -1, advanced_settings = 0, dl_ret = 0;
@@ -292,23 +289,23 @@ int main()
     sceMsgDialogInitialize();
 
 	ret = netInit();
-	if (ret < 0) {
-		klog("netInit() error: 0x%08X\n", ret);
-	}
+	if (ret < 0) 
+		logshit("netInit() error: 0x%08X\n", ret);
+	
 	libnetMemId = ret;
 
 	ret = sceSslInit(SSL_HEAP_SIZE);
 	if (ret < 0)
-		klog("sceSslInit() error %x\n", ret);
+		logshit("sceSslInit() error %x\n", ret);
 
 	libsslCtxId = ret;
 
-	klog("libsslCtxId = %x\n", libsslCtxId);
+	logshit("libsslCtxId = %x\n", libsslCtxId);
 
 
 	ret = sceHttpInit(libnetMemId, libsslCtxId, HTTP_HEAP_SIZE);
 	if (ret < 0)
-		klog("sceHttpInit() error %x\n", ret);
+		logshit("sceHttpInit() error %x\n", ret);
 
 	libhttpCtxId = ret;
 
@@ -320,9 +317,9 @@ int main()
         ret = sys_dynlib_dlsym(libjb, "jailbreak_me", &jailbreak_me);
         if (!ret)
         {
-          klog("jailbreak_me resolved from PRX\n");
+          logshit("jailbreak_me resolved from PRX\n");
    
-            if(ret = jailbreak_me() != 0){
+            if(jailbreak_me() != 0){
               msgok("FATAL Jailbreak failed with code: %x\n", ret); goto exit_sec;
             }
             else printf("jailbreak_me() returned %i\n", ret);
@@ -331,18 +328,17 @@ int main()
           msgok("FATAL Jailbreak failed with code: %x\n", ret); goto exit_sec;}
 
 
-	if (ret == 0)
+	if (!ret)
 	{
-		klog("After jb\n");
-		unlink("/data/Loader_Logs.txt");
+		logshit("After jb\n");
 		mkdir("/user/app/NPXS39041/storedata/", 0777);
 		mkdir("/user/app/NPXS39041/logs/", 0777);
+		unlink("/user/app/NPXS39041/logs/loader.log");
 		mkdir("/user/app/NPXS39041/", 0777);
 
 		
 
 		logshit("[STORE_GL_Loader:%s:%i] -----  All Internal Modules Loaded  -----\n", __FUNCTION__, __LINE__);
-
 		logshit("------------------------ Store Loader[GL] Compiled Time: %s @ %s EST -------------------------\n", __DATE__, __TIME__);
 		logshit("[STORE_GL_Loader:%s:%i] -----  STORE Version: %s  -----\n", __FUNCTION__, __LINE__, completeVersion);
 		logshit("----------------------------------------------- -------------------------\n");
@@ -403,9 +399,8 @@ int main()
 
 				advanced_settings = pl_ini_get_int(&init, "Settings", "Advanced_enabled", 0);
 				if (advanced_settings)
-				{
-					pl_ini_get_string(&init, "Settings", "CDN_For_Devkit_Modules", "http://api.pkg-zone.com/", Devkit_M, 255);
-				}
+				    pl_ini_get_string(&init, "Settings", "CDN_For_Devkit_Modules", "http://api.pkg-zone.com/", Devkit_M, 255);
+				
 
 
 
@@ -429,32 +424,27 @@ int main()
 		{
 			logshit("[STORE_GL_Loader:%s:%i] ----- Ping Successfully ---\n", __FUNCTION__, __LINE__);
 
-			
+
 #if IS_INTERNAL == 1
 			int dl_ret = download_file(libnetMemId, libhttpCtxId, cdnbuf, "/data/homebrew.elf.new");
 #else
-             snprintf(cdnbuf, 254, "%s/update/remote.md5", cdninpute);
+			snprintf(cdnbuf, 254, "%s/update/remote.md5", cdninpute);
 
-			 dl_ret = download_file(libnetMemId, libhttpCtxId, cdnbuf, "/user/app/NPXS39041/remote.md5");
-			 if (dl_ret != 200)
-				 goto err;
+			dl_ret = download_file(libnetMemId, libhttpCtxId, cdnbuf, "/user/app/NPXS39041/remote.md5");
+			if (dl_ret != 200)
+				goto err;
 
 
 			fd = sceKernelOpen("/user/app/NPXS39041/pig.sprx", 0x0000, 0);
 			if (fd < 0)
 			{
 				loadmsg("Downloading Devkit Modules...\n");
-
 				logshit("[STORE_GL_Loader:%s:%i] ----- Piglet NOT Found Downloading.... ---\n", __FUNCTION__, __LINE__);
 
 				if (advanced_settings != 0)
-				{
 					snprintf(cdnbuf, 255, "%s/pig.sprx", Devkit_M);
-				}
-                else
-				    snprintf(cdnbuf, 255,"%s/pig.sprx", cdninpute);
-
-				printf(cdnbuf);
+				else
+					snprintf(cdnbuf, 255, "%s/pig.sprx", cdninpute);
 
 				dl_ret = download_file(libnetMemId, libhttpCtxId, cdnbuf, "/user/app/NPXS39041/pig.sprx");
 				if (dl_ret != 200)
@@ -469,17 +459,14 @@ int main()
 				logshit("[STORE_GL_Loader:%s:%i] ----- Shacc NOT Found Downloading.... ---\n", __FUNCTION__, __LINE__);
 
 				if (advanced_settings != 0)
-				{
 					snprintf(cdnbuf, 255, "%s/shacc.sprx", Devkit_M);
-				}
 				else
-                    snprintf(cdnbuf, 255,"%s/shacc.sprx", cdninpute);
+					snprintf(cdnbuf, 255, "%s/shacc.sprx", cdninpute);
 
-				printf(cdnbuf);
 				dl_ret = download_file(libnetMemId, libhttpCtxId, cdnbuf, "/user/app/NPXS39041/shacc.sprx");
-				
-				if(dl_ret != 200)
-				  goto err;
+
+				if (dl_ret != 200)
+					goto err;
 			}
 			else
 				logshit("[STORE_GL_Loader:%s:%i] ----- Shacc already downloaded ---\n", __FUNCTION__, __LINE__);
@@ -523,124 +510,108 @@ int main()
 
 			else
 			{
-				
+
 				if (true)
 				{
 					logshit("[STORE_GL_Loader:%s:%i] ----- CheckForUpdate() ---\n", __FUNCTION__, __LINE__);
- 
-		            snprintf(cdnbuf, 254, "%s/update/homebrew.elf", cdninpute);
+
+					snprintf(cdnbuf, 254, "%s/update/homebrew.elf", cdninpute);
 					if (checkForUpdate(cdnbuf) == 0)
 					{
-                                                mkdir("/data/self", 0777);
-                                                unlink("/data/self/eboot.bin");
+						mkdir("/data/self", 0777);
+						unlink("/data/self/eboot.bin");
 
-                     if(secure_boot)
-                     {
-                           snprintf(cdnbuf, 254, "%s/update/homebrew.elf.sig", cdninpute);
-                           logshit("[STORE_GL_Loader:%s:%i] ----- Secure Boot is ENABLED ---\n", __FUNCTION__, __LINE__);
-
-                           logshit("[STORE_GL_Loader:%s:%i] ----- Checking Revocation list..... ---\n", __FUNCTION__, __LINE__);
-
-                           if(update_version_by_hash("/user/app/NPXS39041/homebrew.elf") == 0)
-                           {
-                              
-
-                              logshit("[STORE_GL_Loader:%s:%i] ----- Update is NOT part of the revoked listed ---\n", __FUNCTION__, __LINE__);
-                           }
-                           else
-                           {
-
-                             	 msgok("FATAL!\n\n [SWU Error] Update IS Revoked\n\n to use this Update turn off Secure Boot");
-                            	 goto exit_sec;
-
-                           }
-
-
-                           logshit("[STORE_GL_Loader:%s:%i] ----- Downloading RSA Sig CDN: %s ---\n", __FUNCTION__, __LINE__, cdninpute);
-                           if(download_file(libnetMemId, libhttpCtxId, cdnbuf, "/user/app/NPXS39041/homebrew.elf.sig") == 200)
-                           {
-                               loadmsg("Checking RSA Sig...\n");
-
-                           
-
-
-                             ret = sys_dynlib_dlsym(librsa, "VerifyRSA", &VerifyRSA);
-                             if (!ret)
-                             {
-                                  klog("VerifyRSA resolved from PRX\n");
-   
-                                  if(ret = VerifyRSA("/user/app/NPXS39041/homebrew.elf", "/mnt/sandbox/NPXS39041_000/app0/Media/rsa.pub") != 0)
-                                  {
-
-                                           msgok("FATAL!\n\n RSA Check has failed with Error Code %x\n", ret);
-                                           goto exit_sec;
-                                  }
-                                  else
-                                        msgok("Success!\n\n RSA Check has passed\n");
-
-
-                                 klog("VerifyRSA from PRX return %x\n", ret);
-                             }
-                               else{
-                                 msgok("FATAL!\n\n could not resolve RSA PRX\n"); goto exit_sec;}
-                               
-
-                              
-                              
-                          }
-                          else
-                          {
-                            msgok("FATAL!\n\nSecure Boot is enabled but we couldnt\n Download the Sig file from the CDN"); goto exit_sec;
-                          }
-
-
-                     }    
-
-					 logshit("[STORE_GL_Loader:%s:%i] ----- Cleaning Up Network ---\n", __FUNCTION__, __LINE__);
-
-					     sceHttpTerm(libhttpCtxId);
-					     sceSslTerm(libsslCtxId);
- 
-					     sceNetPoolDestroy();
-					     sceNetTerm();
-
-                        copyFile("/user/app/NPXS39041/homebrew.elf", "/data/self/eboot.bin");
-                        logshit("[STORE_GL_Loader:%s:%i] ----- Launching() ---\n", __FUNCTION__, __LINE__);
-			 			ret = sceSystemServiceLoadExec("/data/self/eboot.bin", 0); 
-  					        if (ret == 0)
+						if (secure_boot)
 						{
-							logshit("[STORE_GL_Loader:%s:%i] ----- Launched (shouldnt see) ---\n", __FUNCTION__, __LINE__);
-							while(1){}
+							snprintf(cdnbuf, 254, "%s/update/homebrew.elf.sig", cdninpute);
+							logshit("[STORE_GL_Loader:%s:%i] ----- Secure Boot is ENABLED ---\n", __FUNCTION__, __LINE__);
 
-							return -1;
+							logshit("[STORE_GL_Loader:%s:%i] ----- Checking Revocation list..... ---\n", __FUNCTION__, __LINE__);
+
+							if (update_version_by_hash("/user/app/NPXS39041/homebrew.elf") == 0)
+								logshit("[STORE_GL_Loader:%s:%i] ----- Update is NOT part of the revoked listed ---\n", __FUNCTION__, __LINE__);
+							else
+							{
+
+								msgok("FATAL!\n\n [SWU Error] Update IS Revoked\n\n to use this Update turn off Secure Boot");
+								goto exit_sec;
+							}
+
+
+							logshit("[STORE_GL_Loader:%s:%i] ----- Downloading RSA Sig CDN: %s ---\n", __FUNCTION__, __LINE__, cdninpute);
+							if (download_file(libnetMemId, libhttpCtxId, cdnbuf, "/user/app/NPXS39041/homebrew.elf.sig") == 200)
+							{
+								loadmsg("Checking RSA Sig...\n");
+
+								ret = sys_dynlib_dlsym(librsa, "VerifyRSA", &VerifyRSA);
+								if (!ret)
+								{
+									logshit("VerifyRSA resolved from PRX\n");
+
+									if (ret = VerifyRSA("/user/app/NPXS39041/homebrew.elf", "/mnt/sandbox/NPXS39041_000/app0/Media/rsa.pub") != 0)
+									{
+
+										msgok("FATAL!\n\n RSA Check has failed with Error Code %x\n", ret);
+										goto exit_sec;
+									}
+									else
+										msgok("Success!\n\n RSA Check has passed\n");
+
+
+									logshit("VerifyRSA from PRX return %x\n", ret);
+								}
+								else {
+									msgok("FATAL!\n\n could not resolve RSA PRX\n"); goto exit_sec;
+								}
+
+
+							}
+							else
+							{
+								msgok("FATAL!\n\nSecure Boot is enabled but we couldnt\n Download the Sig file from the CDN"); goto exit_sec;
+							}
+
+
+
 						}
+
+						logshit("[STORE_GL_Loader:%s:%i] ----- Cleaning Up Network ---\n", __FUNCTION__, __LINE__);
+
+						sceHttpTerm(libhttpCtxId);
+						sceSslTerm(libsslCtxId);
+
+						sceNetPoolDestroy();
+						sceNetTerm();
+
+						copyFile("/user/app/NPXS39041/homebrew.elf", "/data/self/eboot.bin");
+						logshit("[STORE_GL_Loader:%s:%i] ----- Launching() ---\n", __FUNCTION__, __LINE__);
+						ret = sceSystemServiceLoadExec("/data/self/eboot.bin", 0);
+						if (ret == 0)
+							logshit("[STORE_GL_Loader:%s:%i] ----- Launched (shouldnt see) ---\n", __FUNCTION__, __LINE__);
 					}
 					else
-					{
 						msgok("Update has FAILED please reinstall the pkg\n");
-					}
+
 				}
 				else
-				{
 					logshit("[STORE_GL_Loader:%s:%i] -----  JAILBREAK FAILED  -----\n", __FUNCTION__, __LINE__);
-				}
+
 			}
 
-			
-		}
-	}
+
+		}//else if (ret == 0)
+	} // else if (ret == 0)
 	else
 		logshit("[STORE_GL_Loader:%s:%i] -----  loadModulesGl() FAILED  -----\n", __FUNCTION__, __LINE__);
 
-	err:
-	msgok("Downloading %s failed wiht code %x", cdnbuf, dl_ret);
+err:
+   msgok("The Store Loader has encountered an error\n\nFor more info check: /user/app/NPXS39041/logs/loader.log\nThe App will now Close");
 
 exit_sec:
   printf("rip");
   sceSystemServiceLoadExec("exit", 0);
 
-while(1){};
-return 0;
+return -1;
 }
 
 void catchReturnFromMain(int exit_code)

@@ -20,6 +20,9 @@
 - [OpenSSL/MD5](https://github.com/openssl/openssl) (Apache License 2.0)
 - [BusyBox](https://elixir.bootlin.com/busybox/0.39/source) (GPLv2)
 - [LibPNG](https://github.com/glennrp/libpng) 
+- [log.c](https://github.com/rxi/log.c)
+- [Game Dumper](https://github.com/xvortex/ps4-dumper-vtx)
+- [libjbc](https://github.com/sleirsgoevy/ps4-libjbc)
 - Libz
 
 ## Refs
@@ -40,8 +43,10 @@ CDN=UR_HOST //OPTIONAL
 Secure_Boot=1 //ONLY allows RSA signed updates from this GH OPTIONAL
 temppath=PATH_WHERE_TO_DOWNLOAD_THE_PKGS; Required
 StoreOnUSB=0 //store pkgs on usb OPTIONAL
+BETA_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxx //for Beta Builds (define)
 Adavnced_Enabled=1 // need it for advanced settings optional
 CDN_For_Devkit_Modules=CDN_FOR_ONLY_DEVKIT_MODULES //optional
+Legacy=0 //enables old Store APIs
 ```
  
 ## App details
@@ -49,12 +54,17 @@ CDN_For_Devkit_Modules=CDN_FOR_ONLY_DEVKIT_MODULES //optional
 upon booting up the app will cache all json files from the CDN in the settings.ini
 restart is required for changes made to json files (for now)
 
-all images from jsons download to /user/app/STORE_ID/storedata/
-all jsons are downloaded to /user/app/STORE_ID/
+- all images from jsons download to /user/app/STORE_ID/storedata/
+- all jsons are downloaded to /user/app/STORE_ID/
+- Store log is at `/user/app/NPXS39041/logs/log.txt`
 
-IF the settings file is loaded from USB all settings will be saved to USBs
+IF the settings file is loaded from USB all settings will be saved to the same USB
 
-ONLY 3/4 apps can download at once
+ONLY 4 apps can download at once
+
+## Official Discord server
+
+Invite: https://discord.gg/GvzDdx9GTc
 
 ## Credits
 
@@ -67,5 +77,7 @@ ONLY 3/4 apps can download at once
 - [Masterzorag](https://twitter.com/masterzorag)
 - [Psxdev/BigBoss](https://twitter.com/psxdev)
 - [Specter](https://twitter.com/SpecterDev)
+- [Sleirsgoevy](https://github.com/sleirsgoevy/)
+- [AlAzif](https://github.com/al-azif)
 
 
