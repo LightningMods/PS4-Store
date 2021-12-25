@@ -307,11 +307,15 @@ int jbc_get_cred(struct jbc_cred* ans)
         || ppcopyout(&ans->rgid, 1 + &ans->svgid, ucred + 20)
         || ppcopyout(&ans->prison, 1 + &ans->prison, ucred + 0x30)
         || ppcopyout(&ans->cdir, 1 + &ans->jdir, fd + 0x10)
-        || ppcopyout(&ans->sceProcType, 1 + &ans->sceProcCap, ucred + 88))
+|| ppcopyout(&ans->rdir, 1 + &ans->jdir, fd + 0x10)
+|| ppcopyout(&ans->jdir, 1 + &ans->jdir, fd + 0x10)
+        || ppcopyout(&ans->sceProcType, 1 + &ans->sceProcType, ucred + 88)
+        || ppcopyout(&ans->sonyCred, 1 + &ans->sonyCred, ucred + 88)
+        || ppcopyout(&ans->sceProcCap, 1 + &ans->sceProcCap, ucred + 96))
         return -1;
 
     return 0;
-}
+}//
 
 int jbc_set_cred(const struct jbc_cred* ans)
 {
@@ -330,11 +334,13 @@ int jbc_set_cred(const struct jbc_cred* ans)
     return 0;
 }
 
+
 int jbc_jailbreak_cred(struct jbc_cred* ans)
 {
     uintptr_t prison0 = jbc_get_prison0();
     if (!prison0)
         return -1;
+
     uintptr_t rootvnode = jbc_get_rootvnode();
     if (!rootvnode)
         return -1;
@@ -350,11 +356,18 @@ int jbc_jailbreak_cred(struct jbc_cred* ans)
     return 1;
 }
 
+struct jbc_cred rejail;
 
 int jailbreak_multi() {
 
   struct jbc_cred ans;
+  jbc_get_cred(&rejail);
+  jbc_get_cred(&ans);
   jbc_jailbreak_cred(&ans);
   return jbc_set_cred(&ans);
+}
+
+int rejail_multi() {
+  return jbc_set_cred(&rejail);
 }
 

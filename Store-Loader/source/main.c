@@ -32,15 +32,9 @@ struct revocation_list revoke_list[] = {
 };
 
 
-
-
-#define SCE_LIBC_HEAP_SIZE_EXTENDED_ALLOC_NO_LIMIT (0xffffffffffffffffUL)
-// size_t sceLibcHeapSize = 256 * 1024 * 1024;
-//size_t sceLibcHeapSize = SCE_LIBC_HEAP_SIZE_EXTENDED_ALLOC_NO_LIMIT;
-//unsigned int sceLibcHeapExtendedAlloc = 1;
-
-int (*VerifyRSA)(const char* path, const char* pubkey);
-int (*jailbreak_me)(void);
+static int (*VerifyRSA)(const char* path, const char* pubkey) = NULL;
+static int (*jailbreak_me)(void) = NULL;
+static int (*rejail_multi)(void) = NULL;
 
 int64_t sys_dynlib_load_prx(char* prxPath, int* moduleID)
 {
@@ -328,6 +322,15 @@ int main()
           msgok("FATAL Jailbreak failed with code: %x\n", ret); goto exit_sec;}
 
 
+		ret = sys_dynlib_dlsym(libjb, "rejail_multi", &rejail_multi);
+		if (!ret)
+		   logshit("rejail_multi resolved from PRX\n");
+		else {
+			msgok("FATAL rejail_multi failed with code: %x\n", ret); goto exit_sec;
+		}
+		
+
+
 	if (!ret)
 	{
 		logshit("After jb\n");
@@ -555,7 +558,7 @@ int main()
 										goto exit_sec;
 									}
 									else
-										msgok("Success!\n\n RSA Check has passed\n");
+										logshit("Success!\n\n RSA Check has passed\n");
 
 
 									logshit("VerifyRSA from PRX return %x\n", ret);
@@ -584,6 +587,10 @@ int main()
 						sceNetTerm();
 
 						copyFile("/user/app/NPXS39041/homebrew.elf", "/data/self/eboot.bin");
+
+						logshit("[STORE_GL_Loader:%s:%i] ----- calling rejail_multi ---\n", __FUNCTION__, __LINE__);
+						rejail_multi();
+
 						logshit("[STORE_GL_Loader:%s:%i] ----- Launching() ---\n", __FUNCTION__, __LINE__);
 						ret = sceSystemServiceLoadExec("/data/self/eboot.bin", 0);
 						if (ret == 0)
@@ -608,7 +615,13 @@ err:
    msgok("The Store Loader has encountered an error\n\nFor more info check: /user/app/NPXS39041/logs/loader.log\nThe App will now Close");
 
 exit_sec:
-  printf("rip");
+   if (rejail_multi != NULL)
+   {
+	   logshit("Rejailing App");
+	   rejail_multi();
+	   printf("App rejailed\n");
+   }
+
   sceSystemServiceLoadExec("exit", 0);
 
 return -1;
