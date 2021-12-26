@@ -267,13 +267,14 @@ int initGL_for_the_store(bool reload_apps, int ref_pages)
     FILE* fp = fopen(STORE_LOG, "w");
     log_add_fp(fp, LOG_DEBUG);
     //USB LOGGING
-    if (usbpath() != NULL)
+   /* if (strstr(usbpath(), "/mnt/usb"))
     {
         sprintf(&tmp[0], "%s/Store-log.txt", usbpath());
         unlink(tmp);
         fp = fopen(tmp, "w");
+        if(fp != NULL)
         log_add_fp(fp, LOG_DEBUG);
-    }
+    }*/
     /* -- END OF LOGINIT --*/
 
 

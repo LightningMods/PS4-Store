@@ -353,6 +353,30 @@ typedef enum badge_t
     NUM_OF_BADGES
 } badge_t;
 
+#define ORBIS_LIBC_MALLOC_MANAGED_SIZE_VERSION (0x0001U)
+
+#ifndef SCE_LIBC_INIT_MALLOC_MANAGED_SIZE
+#define SCE_LIBC_INIT_MALLOC_MANAGED_SIZE(mmsize) do { \
+	mmsize.size = sizeof(mmsize); \
+	mmsize.version = ORBIS_LIBC_MALLOC_MANAGED_SIZE_VERSION; \
+	mmsize.reserved1 = 0; \
+	mmsize.maxSystemSize = 0; \
+	mmsize.currentSystemSize = 0; \
+	mmsize.maxInuseSize = 0; \
+	mmsize.currentInuseSize = 0; \
+} while (0)
+#endif
+
+typedef struct SceLibcMallocManagedSize {
+    uint16_t size;
+    uint16_t version;
+    uint32_t reserved1;
+    size_t maxSystemSize;
+    size_t currentSystemSize;
+    size_t maxInuseSize;
+    size_t currentInuseSize;
+} SceLibcMallocManagedSize;
+
 
 #define ARRAYSIZE(a) ((sizeof(a) / sizeof(*(a))) / ((size_t)(!(sizeof(a) % sizeof(*(a))))))
 

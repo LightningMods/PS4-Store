@@ -4,7 +4,7 @@
 #include <pl_ini.h>
 #include <md5.h>
 #include <errno.h>
-#include <user_mem.h> 
+#include <stdlib.h>
 
 StoreOptions set,
             *get;
@@ -610,6 +610,7 @@ int check_download_counter(StoreOptions* set, char* title_id)
 
     char  http_req[300];
     char* result;
+    int count;
 
 #if LOCALHOST_WINDOWS
     snprintf(http_req, 300, "%s/00/download.php?tid=%s&check", set->opt[CDN_URL], title_id);
@@ -619,7 +620,10 @@ int check_download_counter(StoreOptions* set, char* title_id)
 
     result = check_from_url(http_req, DL_COUNTER);
 
-    int count = atoi(result);
+    if (result != NULL)
+        count = atoi(result);
+    else
+        msgok(FATAL, "Dev Error 6066");
 
     free(result);
 
@@ -644,7 +648,7 @@ int check_store_from_url(int page_number, char* cdn, enum CHECK_OPTS opt)
             snprintf(http_req, 300, "%s/api.php?page=%i&check_hash=true", cdn, page_number);
             snprintf(dst_path, 300, "/user/app/NPXS39041/homebrew-page%i.json", page_number);
 
-            result = check_from_url(http_req, opt);
+            result = check_from_url(http_req, MD5_HASH);
 
             if (MD5_hash_compare(dst_path, result) == SAME_HASH)
             {
@@ -660,14 +664,22 @@ int check_store_from_url(int page_number, char* cdn, enum CHECK_OPTS opt)
         {
             snprintf(http_req, 300, "%s/api.php?count=true", cdn);
 
-            result = check_from_url(http_req, opt);
+            result = check_from_url(http_req, COUNT);
 
 
             int pages = -1;
-            if (atoi(result) < 20000)
-                pages = atoi(result) / 15;
+            if (result != NULL)
+            {
+                
+                log_info("result %s", result);
+                if (atoi(result) < 20000)
+                   pages = atoi(result) / 15;
+                else
+                  msgok(FATAL, "Number of pages Exceeds the Stores Limits!");
+            }
             else
-                msgok(FATAL, "Number of pages Exceeds the Stores Limits!");
+                msgok(FATAL, "Dev Error 6066");
+          
 
             if (pages % 15 != 0) pages++;
 
@@ -1015,29 +1027,6 @@ error:
     return ret;
 }
 
-#define SCE_LIBC_MALLOC_MANAGED_SIZE_VERSION (0x0001U)
-
-#ifndef SCE_LIBC_INIT_MALLOC_MANAGED_SIZE
-#define SCE_LIBC_INIT_MALLOC_MANAGED_SIZE(mmsize) do { \
-	mmsize.size = sizeof(mmsize); \
-	mmsize.version = SCE_LIBC_MALLOC_MANAGED_SIZE_VERSION; \
-	mmsize.reserved1 = 0; \
-	mmsize.maxSystemSize = 0; \
-	mmsize.currentSystemSize = 0; \
-	mmsize.maxInuseSize = 0; \
-	mmsize.currentInuseSize = 0; \
-} while (0)
-#endif
-
-typedef struct SceLibcMallocManagedSize {
-    uint16_t size;
-    uint16_t version;
-    uint32_t reserved1;
-    size_t maxSystemSize;
-    size_t currentSystemSize;
-    size_t maxInuseSize;
-    size_t currentInuseSize;
-} SceLibcMallocManagedSize;
 
 void print_memory()
 {

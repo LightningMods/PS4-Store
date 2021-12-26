@@ -8,7 +8,6 @@
 
 #include "defines.h"
 #include "Header.h"
-#include <user_mem.h> 
 
 struct dl_args {
     const char *src,
@@ -116,9 +115,12 @@ int ini_dl_req(struct dl_args *i)
         if (contentLengthType == ORBIS_HTTP_CONTENTLEN_EXIST)
         {
             i->contentLength = contentLength;
-            log_info( "[%s:%i] ----- Content-Length = %lu ---", __FUNCTION__, __LINE__, contentLength);
-            return statusCode;
+            log_info("[%s:%i] ----- Content-Length = %lu ---", __FUNCTION__, __LINE__, contentLength);
         }
+        else // for some reason COUNT and MD5 have no LENs but the app still loads the content fine???
+            log_warn("wtf???");
+
+        return statusCode;
     }
 
 error:
@@ -337,7 +339,6 @@ char *check_from_url(const char *url_, enum CHECK_OPTS opt)
 
     jsmn_parser p;
     jsmntok_t t[128]; /* We expect no more than 128 tokens */
-
 
     jsmn_init(&p);
     r = jsmn_parse(&p, JSON, strlen(JSON), t,  sizeof(t) / sizeof(t[0]));
