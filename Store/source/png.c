@@ -3,7 +3,7 @@
 #include <assert.h>
 
 #include <GLES2/gl2.h>
-
+#include <user_mem.h> 
 #include "defines.h"
 
 /////// png
@@ -282,7 +282,7 @@ int writeImage(char* filename, int width, int height, int *buffer, char* title)
     png_write_info(png_ptr, info_ptr);
 
     // Allocate memory for one row (3 bytes per pixel - RGB)
-    row = (png_bytep) calloc(3 * width +1, sizeof(png_byte));
+    row = (png_bytep)calloc(3 * width +1, sizeof(png_byte));
 
     // Write image data
     int x, y;

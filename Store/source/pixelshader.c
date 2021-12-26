@@ -84,7 +84,7 @@ static void reshape(int width, int height)
 #include "p_shaders.h"     // actually, just 4
 #include "ps_signs_frag.h" 
 
-static GLuint CreateProgramFE(int program_num)
+static GLuint CreateProgramFE(int program_num, char* path)
 {
     GLchar  *vShader = vs_s[0];
     GLchar  *fShader = fs_s[ program_num ];
@@ -96,7 +96,7 @@ static GLuint CreateProgramFE(int program_num)
         switch(program_num)
         {
             case 4:  fShader = ps_signs_shader;   break;
-            case 5:  fShader = (void*)orbisFileGetFileContent( "/user/app/NPXS39041/shaders/SnowIsFalling.frag" );  break;
+            case 5:  fShader = (void*)orbisFileGetFileContent( path );  break;
             default: fShader = fs_s[ 2/*iTime*/]; break;
         }
     }
@@ -169,8 +169,16 @@ void pixelshader_init( int width, int height )
     }
 #endif
     /* compile, link and use shader */
-    mz_shader = CreateProgramFE(0);
-       shader = CreateProgramFE(4); // test emb2
+#define SNOW_DLC "/mnt/sandbox/NPXS39041_000/app0/assets/snow.frag"
+
+mz_shader = CreateProgramFE(0, NULL);
+
+if (if_exists(SNOW_DLC)) {
+    log_info("Loading....");
+    shader = CreateProgramFE(5, SNOW_DLC);
+}
+else
+   shader = CreateProgramFE(4, NULL); // test emb2
     // feedback
     log_info( "[%s] program_id=%d (0x%08x)", __FUNCTION__, mz_shader, mz_shader);
     log_info( "[%s] program_id=%d (0x%08x)", __FUNCTION__,    shader,    shader);

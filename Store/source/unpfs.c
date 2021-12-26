@@ -12,6 +12,7 @@
 #include <sys/signal.h>
 #include <errno.h>
 #include <sig_handler.h>
+#include <user_mem.h> 
 
 #if defined (__ORBIS__)
 
@@ -98,17 +99,17 @@ static void parse_directory(int ino, int lev, char *parent_name, bool dry_run, c
 
     while (pos < top)
     {
-      struct dirent_t *ent = lmalloc (sizeof(struct dirent_t));
+      struct dirent_t *ent = malloc(sizeof(struct dirent_t));
       lseek(pfs, pos, SEEK_SET);
       read(pfs, ent, sizeof(struct dirent_t));
 
       if (ent->type == 0)
       {
-        lfree(ent);
+        free(ent);
         break;
       }
 
-      char *name = lmalloc(ent->namelen + 1);
+      char *name = malloc(ent->namelen + 1);
       memset(name, 0, ent->namelen + 1);
       if (lev > 0)
       {
@@ -117,7 +118,7 @@ static void parse_directory(int ino, int lev, char *parent_name, bool dry_run, c
       }
 
 
-      char* fname = lmalloc(strlen(parent_name) + ent->namelen + 2);
+      char* fname = malloc(strlen(parent_name) + ent->namelen + 2);
       if (parent_name != NULL)
           sprintf(fname, "%s/%s", parent_name, name);
       else
@@ -125,7 +126,7 @@ static void parse_directory(int ino, int lev, char *parent_name, bool dry_run, c
 
       if ((ent->type == 2) && (lev > 0))
       {
-         log_info("%s -- prog %llx", fname, p_progress);
+         log_info("%s -- prog %.3f", fname, p_progress);
          
         if(strstr(fname, "-app"))
 	           ProgSetMessagewText(p_progress, "Dump info\nApp name: %s\nTITLE_ID %s\n\nExtracting Base Game files File %s to USB...\n", gtitle, title_id, fname);
@@ -147,16 +148,16 @@ static void parse_directory(int ino, int lev, char *parent_name, bool dry_run, c
 
       pos += ent->entsize;
 
-      lfree(ent);
-      lfree(name);
-      lfree(fname);
+      free(ent);
+      free(name);
+      free(fname);
     }
   }
 }
 
 int unpfs(char *pfsfn, char *tidpath, char* gtitle, char* title_id)
 {
-  copy_buffer = lmalloc(BUFFER_SIZE);
+  copy_buffer = malloc(BUFFER_SIZE);
 
   p_progress = 11;
 
@@ -165,13 +166,17 @@ int unpfs(char *pfsfn, char *tidpath, char* gtitle, char* title_id)
   pfs = open(pfsfn, O_RDONLY, 0);
   if (pfs < 0) return -1;
 
-  header = lmalloc(sizeof(struct pfs_header_t));
+  header = malloc(sizeof(struct pfs_header_t));
   lseek(pfs, 0, SEEK_SET);
   read(pfs, header, sizeof(struct pfs_header_t));
 
-  inodes = lmalloc(sizeof(struct di_d32) * header->ndinode);
+  inodes = malloc(sizeof(struct di_d32) * header->ndinode);
 
   uint32_t ix = 0;
+
+
+
+  ProgSetMessagewText(20, "Dump info\n\nApp name: %s\nTITLE_ID %s\n\n Processing ino(s) ...", gtitle, title_id);
 
   for (uint32_t i = 0; i < header->ndinodeblock; i++)
   {		
@@ -179,10 +184,6 @@ int unpfs(char *pfsfn, char *tidpath, char* gtitle, char* title_id)
     {
       lseek(pfs, (uint64_t)header->blocksz * (i + 1) + sizeof(struct di_d32) * j, SEEK_SET);
       read(pfs, &inodes[ix], sizeof(struct di_d32));
-
-
- 
-	   ProgSetMessagewText(20, "Dump info\n\nApp name: %s\nTITLE_ID %s\n\n Processing ino 0x%x...", gtitle, title_id, ix);
 
       ix++;       
     }
@@ -196,10 +197,10 @@ int unpfs(char *pfsfn, char *tidpath, char* gtitle, char* title_id)
 
   notify_buf[0] = '\0';
 
-  lfree(header);
-  lfree(inodes);
+  free(header);
+  free(inodes);
   close(pfs);
-  lfree(copy_buffer);
+  free(copy_buffer);
 	
   return 0;
 }

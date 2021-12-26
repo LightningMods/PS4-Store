@@ -7,6 +7,8 @@
 #include <dump_and_decrypt.h>
 #include <errno.h>
 #include "log.h"
+#include <user_mem.h> 
+
 #if defined (__ORBIS__)
 
 #include <ps4sdk.h>
@@ -75,8 +77,6 @@ bool is_self(const char* fn)
         }
         else {
             log_error("mmap file %s err : %s", fn, strerror(errno));
-            if(strstr(fn, "eboot.bin") != NULL)
-                return false;
         }
         log_info("Close(fd): %x", sceKernelClose(fd));
 

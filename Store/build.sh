@@ -1,0 +1,1 @@
+cd ../itemz-daemon/ && make clean && make -j8 && make oelf && make eboot && cd ../Store/ && make clean && make -j8 && make oelf && make eboot

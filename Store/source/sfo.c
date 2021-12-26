@@ -3,6 +3,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <user_mem.h> 
 
 typedef uint32_t u32;
 typedef uint8_t  u8 ;

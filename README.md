@@ -46,7 +46,9 @@ StoreOnUSB=0 //store pkgs on usb OPTIONAL
 BETA_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxx //for Beta Builds (define)
 Adavnced_Enabled=1 // need it for advanced settings optional
 CDN_For_Devkit_Modules=CDN_FOR_ONLY_DEVKIT_MODULES //optional
-Legacy=0 //enables old Store APIs
+Legacy=0 // Enables old Store APIs
+Home_Redirection=1 // Enables the Home Menu Redirect
+Daemon_on_start=0 // Disables the Daemon from auto starting with the app
 ```
  
 ## App details

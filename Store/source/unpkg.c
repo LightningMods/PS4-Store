@@ -12,6 +12,7 @@
 #include <sys/signal.h>
 #include <errno.h>
 #include <sig_handler.h>
+#include <user_mem.h> 
 
 #if defined (__ORBIS__)
 
@@ -77,7 +78,7 @@ static inline int fgetcc(int fd)
 
 char *read_string(int fd)
 {
-  char *string = lmalloc(sizeof(char) * 256);
+  char *string = malloc(sizeof(char) * 256);
   int c;
   int length = 0;
   if (!string) return string;
@@ -87,7 +88,7 @@ char *read_string(int fd)
   }
   string[length++] = '\0';
 
-  return lrealloc(string, sizeof(char) * length);
+  return realloc(string, sizeof(char) * length);
 }
 
 static void _mkdir(const char *dir)
@@ -115,7 +116,7 @@ static void _mkdir(const char *dir)
 
 char *get_entry_name_by_type(uint32_t type)
 {
-    char* entry_name = lmalloc(32);
+    char* entry_name = malloc(32);
 
     if ((type >= 0x1201) && (type <= 0x121F))
         sprintf(entry_name, "icon0_%02u.png", type - 0x1201);
@@ -142,7 +143,7 @@ char *get_entry_name_by_type(uint32_t type)
                                     sprintf(entry_name, "keymap_rp/%02u/%03u.png", (type - 0x1610) / 0x10, (type - 0x1610) % 0x10);
   else
   {
-    lfree(entry_name);
+    free(entry_name);
     entry_name = NULL;
     switch (type) {
       caseentry(0x0400, "license.dat");
@@ -229,7 +230,7 @@ int unpkg(char *pkgfn, char *tidpath)
   lseek(fdin, bswap_32(m_header.file_table_offset), SEEK_SET);
 
   log_info("PS4 PKG table entries:");
-  struct cnt_pkg_table_entry *entries = lmalloc(sizeof(struct cnt_pkg_table_entry) * bswap_16(m_header.table_entries_num));
+  struct cnt_pkg_table_entry *entries = malloc(sizeof(struct cnt_pkg_table_entry) * bswap_16(m_header.table_entries_num));
   memset(entries, 0, sizeof(struct cnt_pkg_table_entry) * bswap_16(m_header.table_entries_num));
   int i;
   for (i = 0; i < bswap_16(m_header.table_entries_num); i++)
@@ -243,7 +244,7 @@ int unpkg(char *pkgfn, char *tidpath)
   }
 
   // Vars for file name listing.
-  struct file_entry *entry_files = lmalloc(sizeof(struct file_entry) * bswap_16(m_header.table_entries_num));
+  struct file_entry *entry_files = malloc(sizeof(struct file_entry) * bswap_16(m_header.table_entries_num));
   memset(entry_files, 0, sizeof(struct file_entry) * bswap_16(m_header.table_entries_num));
   char *file_name_list[256];
   int file_name_index = 0;
@@ -308,7 +309,7 @@ int unpkg(char *pkgfn, char *tidpath)
   log_info("Dumping internal PKG files...");
   for (i = 0; i < bswap_16(m_header.table_entries_num); i++)
   {
-    entry_file_data = (unsigned char *)lmalloc(entry_files[i].size);
+    entry_file_data = (unsigned char *)malloc(entry_files[i].size);
 
     lseek(fdin, entry_files[i].offset, SEEK_SET);
     read(fdin, entry_file_data, entry_files[i].size);
@@ -336,9 +337,9 @@ int unpkg(char *pkgfn, char *tidpath)
   // Clean up.
   close(fdin);
 
-  lfree(entries);
-  lfree(entry_files);
-  lfree(entry_file_data);
+  free(entries);
+  free(entry_files);
+  free(entry_file_data);
 
   log_info("Done.");
 

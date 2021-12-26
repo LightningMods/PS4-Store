@@ -485,73 +485,73 @@ static unsigned char Item_Selected[] = {
 };
 static unsigned int Item_Selected_len = 1606;
 
-static GLuint *badge;
-static vec2   *t_size;
+static GLuint* badge;
+static vec2* t_size;
 
 // turn png_data into OpenGL textures
 void GLES2_Init_badge(void)
 {
-    badge  = calloc(NUM_OF_BADGES -1, sizeof(GLuint));
-    t_size = calloc(NUM_OF_BADGES -1, sizeof(vec2));
+    badge = calloc(NUM_OF_BADGES - 1, sizeof(GLuint));
+    t_size = calloc(NUM_OF_BADGES - 1, sizeof(vec2));
     // just reuse those
-    unsigned char *png_data = NULL;
+    unsigned char* png_data = NULL;
     size_t         png_size = 0;
 
-    for(int i=0; i<NUM_OF_BADGES -1; i++)
+    for (int i = 0; i < NUM_OF_BADGES - 1; i++)
     {
-        switch(i)
+        switch (i)
         {
-            case 0: png_data = &Available_On_Store[0],
-                    png_size =  Available_On_Store_len;
-                    break;
-            case 1: png_data = &Available_Soon[0],
-                    png_size =  Available_Soon_len;
-                    break;
-            case 2: png_data = &Item_Selected[0],
-                    png_size =  Item_Selected_len;
-                    break;
+        case 0: png_data = &Available_On_Store[0],
+            png_size = Available_On_Store_len;
+            break;
+        case 1: png_data = &Available_Soon[0],
+            png_size = Available_Soon_len;
+            break;
+        case 2: png_data = &Item_Selected[0],
+            png_size = Item_Selected_len;
+            break;
         }
-        const RawImageData 
-        raw_image_data = get_raw_image_data_from_png(png_data, png_size);
-            badge[ i ] = load_texture(raw_image_data.width, raw_image_data.height,
-                                                            raw_image_data.gl_color_format,
-                                                            raw_image_data.data);
+        const RawImageData
+            raw_image_data = get_raw_image_data_from_png(png_data, png_size);
+        badge[i] = load_texture(raw_image_data.width, raw_image_data.height,
+            raw_image_data.gl_color_format,
+            raw_image_data.data);
         // tell image resolution size
-        t_size[ i ] = (vec2){ raw_image_data.width, raw_image_data.height };
-        log_info( "badge[%d]: %d (%.fx%.f)", i, badge[ i ],
-                                                     t_size[ i ].x, t_size[ i ].y);
+        t_size[i] = (vec2){ raw_image_data.width, raw_image_data.height };
+        log_info("badge[%d]: %d (%.fx%.f)", i, badge[i],
+            t_size[i].x, t_size[i].y);
         // delete buffers
         release_raw_image_data(&raw_image_data);
     }
 }
 
 
-void GLES2_Render_badge(int idx, vec4 *rect)
+void GLES2_Render_badge(int idx, vec4* rect)
 {
     // we passed just upperleft corner,
     // we can take stored texture sizes
-    vec2 s = t_size[ idx ] // size
-           * 1.0f;         // scale_factor
+    vec2 s = t_size[idx] // size
+        * 1.0f;         // scale_factor
     vec4 r = *rect;
-    r.zw   = px_pos_to_normalized(&s);
-    r.y   -= r.w  + 1.; // lower y position by texture H
-    r.zw  += r.xy + 1.; // keep original aspect ratio!
+    r.zw = px_pos_to_normalized(&s);
+    r.y -= r.w + 1.; // lower y position by texture H
+    r.zw += r.xy + 1.; // keep original aspect ratio!
     // draw
-    on_GLES2_Render_icon(CUSTOM_BADGE, badge[ idx ], 2, &r, NULL);
+    on_GLES2_Render_icon(CUSTOM_BADGE, badge[idx], 2, &r, NULL);
 }
 
 // populate bagde_enums for Installed_Apps
-int scan_for_badges(layout_t *l, item_t *apps)
+int scan_for_badges(layout_t* l, item_t* apps)
 {
-    for(int i = 0; i < l->item_c; i++)
+    for (int i = 0; i < l->item_c; i++)
     {   // stride by 1 due first reserved index !
-        for(int j = 1; j < apps->token_c +1; j++)
+        for (int j = 1; j < apps->token_c + 1; j++)
         {
-            if( ! strcmp(l->item_d[ i ].token_d[ ID ].off,
-                              apps[ j ].token_d[ ID ].off) )
+            if (!strcmp(l->item_d[i].token_d[ID].off,
+                apps[j].token_d[ID].off))
             {   // hit found
-                apps[ j ].badge = AVAILABLE;
-                log_info("i_apps[%.3d] '%s' is Available at item[%.3d]", j, apps[ j ].token_d[ ID ].off, i);
+                apps[j].badge = AVAILABLE;
+                log_info("i_apps[%.3d] '%s' is Available at item[%.3d]", j, apps[j].token_d[ID].off, i);
                 continue;
             }
         }

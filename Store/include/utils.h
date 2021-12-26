@@ -9,6 +9,8 @@
 #include <KeyboardDialog.h>
 #include <sys/param.h>   // MIN
 #include "log.h"
+#include <sys/_iovec.h>
+#include <user_mem.h> 
 
 #define DIM(x)  (sizeof(x)/sizeof(*(x)))
 #define KB(x)   ((size_t) (x) << 10)
@@ -20,7 +22,61 @@ enum MSG_DIALOG {
     WARNING
 };
 
+
+enum IPC_Errors
+{
+    INVALID = -1,
+    NO_ERROR = 0,
+    REDIRECT_OPERATION_FAILED = 1,
+    DEAMON_UPDATING = 100
+};
+
+
+enum IPC_Commands
+{
+    CONNECTION_TEST = 1,
+    ENABLE_HOME_REDIRECT = 2,
+    DISABLE_HOME_REDIRECT = 3,
+    DEAMON_UPDATE = 100
+};
+
+
+
+
+typedef struct SceNetEtherAddr {
+    uint8_t data[6];
+} SceNetEtherAddr;
+
+typedef union SceNetCtlInfo {
+    uint32_t device;
+    SceNetEtherAddr ether_addr;
+    uint32_t mtu;
+    uint32_t link;
+    SceNetEtherAddr bssid;
+    char ssid[33];
+    uint32_t wifi_security;
+    int32_t rssi_dbm;
+    uint8_t rssi_percentage;
+    uint8_t channel;
+    uint32_t ip_config;
+    char dhcp_hostname[256];
+    char pppoe_auth_name[128];
+    char ip_address[16];
+    char netmask[16];
+    char default_route[16];
+    char primary_dns[16];
+    char secondary_dns[16];
+    uint32_t http_proxy_config;
+    char http_proxy_server[256];
+    uint16_t http_proxy_port;
+} SceNetCtlInfo;
+
+
+
 #define STORE_LOG "/user/app/NPXS39041/logs/log.txt"
+#define STANDALONE_APP 0
+#define DAEMON_PATH "/system/vsh/app/ITEM00002"
+#define DAEMON_INI_DOESNT_EXIST 0
 
 //#define assert(expr) if (!(expr)) msgok(FATAL, "Assertion Failed!");
 
@@ -50,7 +106,7 @@ static const char *option_panel_text[] =
 {
     "Content Delivery Network",
     "Temporary Path",
-    "Detected USB",
+    "Set as Home Menu(XMB)",
     "INI Path",
     "Custom FreeType font Path",
     // following doesn't store strings for any Paths...
@@ -78,6 +134,23 @@ enum STR_type
 };
 
 
+enum Settings_options
+{
+    CDN_SETTING,
+    TMP__SETTING,
+    HOME_MENU_SETTING,
+    INI_SETTING,
+    FNT__SETTING,
+    STORE_USB_SETTING,
+    CLEAR_CACHE_SETTING,
+    USE_REFLECTION_SETTING,
+    USE_PIXELSHADER_SETTING,
+    SAVE_SETTINGS,
+    NUM_OF_SETTINGS
+};
+
+
+extern int HDD_count;
 enum CHECK_OPTS
 {
     MD5_HASH,
@@ -89,12 +162,14 @@ enum CHECK_OPTS
     NUM_OF_STRING
 };
 
+#define SCE_SYSMODULE_INTERNAL_COMMON_DIALOG 0x80000018
+#define SCE_SYSMODULE_INTERNAL_SYSUTIL 0x80000018
+
 // indexed options
 typedef struct
 {
     char *opt[ NUM_OF_STRINGS ];
-    int   StoreOnUSB;
-    int   Legacy;
+    bool   StoreOnUSB, Legacy, HomeMenu_Redirection, Daemon_on_start;
     // more options
 } StoreOptions;
 
@@ -110,9 +185,9 @@ uint32_t SysctlByName_get_sdk_version(void);
 
 char *calculateSize(uint64_t size);
 
-
-int  msgok(enum MSG_DIALOG level, char* format, ...);
-int  loadmsg(char* format, ...);
+extern bool is_connected_app;
+void  msgok(enum MSG_DIALOG level, char* format, ...);
+void  loadmsg(char* format, ...);
 long CalcAppsize(char *path);
 char* cutoff(const char* str, int from, int to);
 
@@ -128,6 +203,20 @@ int check_download_counter(StoreOptions* set, char* title_id);
 bool rmtree(const char path[]);
 void setup_store_assets(StoreOptions* get);
 void refresh_apps_for_cf(void);
+int64_t sys_dynlib_load_prx(char* prxPath, int* moduleID);
+int64_t sys_dynlib_unload_prx(int64_t prxID);
+int64_t sys_dynlib_dlsym(int64_t moduleHandle, const char* functionName, void* destFuncOffset);
+struct sockaddr_in IPCAddress(uint16_t port);
+int OpenConnection(const char* name);
+bool IPCOpenConnection();
+int IPCReceiveData(uint8_t* buffer, int32_t size);
+int IPCSendData(uint8_t* buffer, int32_t size);
+int IPCCloseConnection();
+#define DAEMON_BUFF_MAX 100
+void GetIPCMessageWithoutError(uint8_t* buf, uint32_t sz);
+uint32_t Launch_App(char* TITLE_ID, bool silent);
+int mountfs(const char* device, const char* mountpoint, const char* fstype, const char* mode, uint64_t flags);
+
 //int check_store_from_url(char* cdn, enum CHECK_OPTS opt, int *page_number);
 
 extern bool dump;

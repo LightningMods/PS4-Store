@@ -15,6 +15,7 @@
 #include <stdatomic.h>
 #include <time.h>
 
+
 #if defined(__ORBIS__)
     #include <orbisPad.h>
     extern OrbisPadConfig *confPad;
@@ -104,9 +105,9 @@ layout_t *active_p     = NULL, // the one we control
 /*
     array for Special cases
 */
-item_t  *games = NULL,
-       *groups = NULL,
-       *i_apps = NULL; // Installed_Apps
+item_t* games = NULL,
+* groups = NULL,
+* all_apps = NULL;
 /*
     auxiliary array of item_index_t:
     - shared for Search/Groups
@@ -348,7 +349,7 @@ void recreate_item_t(item_t **i)
     if( *i )
     {
         log_info("%s destroy %p, %p, %p", __FUNCTION__, i, *i, **i);
-        for(int j = 0; j < i[0]->token_c +1; j++)
+        for(int j = 0; j < i[0]->token_c + 1; j++)
         {
             log_info("destroy %i %p %d", j, &groups[j].token_d, groups[j].token_c);
         }
@@ -373,8 +374,8 @@ void GLES2_scene_init( int w, int h )
 
     // build an array of indexes for each one entry there
     mkdir("/user/app/", 0777);
-    if( ! i_apps ) i_apps = index_items_from_dir("/user/app");
-
+    log_info("Searching for Apps");
+    if (!all_apps) all_apps = index_items_from_dir("/user/app", "/mnt/ext0/user/app");
     /* now, scan .json files, populate main icon panel */
 
     // try to compose any page, count available ones
@@ -382,7 +383,13 @@ void GLES2_scene_init( int w, int h )
     log_info( "%d available json!", json_c);
 
     // setup one for all missing, the fallback icon0
-    if( ! fallback_t ) fallback_t = load_png_asset_into_texture("/user/appmeta/NPXS39041/icon0.png");
+    if (!fallback_t)
+    {
+        if(if_exists("/user/appmeta/NPXS39041/icon0.png"))
+          fallback_t = load_png_asset_into_texture("/user/appmeta/NPXS39041/icon0.png");
+        else
+          fallback_t = load_png_asset_into_texture("/user/appmeta/external/NPXS39041/icon0.png");
+    }
 
     /* icon panel setup */
 
@@ -425,7 +432,7 @@ void GLES2_scene_init( int w, int h )
     //qsort(icon_panel->item_d, icon_panel->item_c, sizeof(item_t), struct_cmp_by_token);
 
     /* now check for badges: scan items for Installed_Apps */
-    scan_for_badges(icon_panel, i_apps);
+    scan_for_badges(icon_panel, all_apps);
 
 #define HAVE_ATLAS (0) /// main
 #if HAVE_ATLAS
@@ -541,6 +548,7 @@ void GLES2_UpdateVboForLayout(layout_t *l)
         l->vbo_s = EMPTY;
     }
 }
+
 
 
 // not used
@@ -672,15 +680,21 @@ void X_action_dispatch(int action, layout_t *l)
             char API_BUF[300];
             //New Download API
 #if LOCALHOST_WINDOWS
+       
             snprintf(API_BUF, sizeof(API_BUF), "%s/00/download.php?tid=%s", get->opt[CDN_URL], t[ID].off);
 #else
             snprintf(API_BUF, sizeof(API_BUF), "%s/download.php?tid=%s", get->opt[CDN_URL], t[ID].off);
 #endif
-            //Check for the Legacy INI Setting, its a Bool, and check to be Sure its not trying to download a direct DL (.pkg)
-            if (!get->Legacy || (strstr(t[label].off, ".pkg") == NULL && strstr(t[label].off, ".PKG") == NULL))
-               http_ret = dl_from_url_v2(API_BUF, &tmp[0], t); //Download from New API
+            if (strcmp(t[ID].off, STORE_TID) != NULL)
+            {
+                //Check for the Legacy INI Setting, its a Bool, and check to be Sure its not trying to download a direct DL (.pkg)
+                if (!get->Legacy || (strstr(t[label].off, ".pkg") == NULL && strstr(t[label].off, ".PKG") == NULL))
+                    http_ret = dl_from_url_v2(API_BUF, &tmp[0], t); //Download from New API
+                else
+                    http_ret = dl_from_url_v2(t[label].off, &tmp[0], t); //Download from Legacy
+            }
             else
-                http_ret = dl_from_url_v2(t[label].off, &tmp[0], t); //Download from Legacy
+                msgok(WARNING, "HB Store is Not Available for PS4 Download, it is a Website Only Download");
 
         } break;
         /* Install */
@@ -709,10 +723,10 @@ actions_for_Settings:
 
     switch(action)
     {   // use sceKbd to edit related field
-        case CDN_URL : 
-        case TMP_PATH:
-        case INI_PATH:
-        case FNT_PATH: 
+        case CDN_SETTING : 
+        case TMP__SETTING:
+        case INI_SETTING:
+        case FNT__SETTING:
         
             if(action == INI_PATH)
                  msgok(WARNING, "You are making a NEW INI The app WILL NOT use this INI also it will NOT be saved to the INI the app is using!");
@@ -724,7 +738,7 @@ actions_for_Settings:
 
             // check for valid result
             if (strlen(tmp) <= 1 || strlen(tmp) >= 255 ) {
-                msgok(NORMAL, "String is either too long or Invaild Please enter a vaild entry");  goto error;
+                msgok(NORMAL, "String is either too long or INVALID Please enter a vaild entry");  goto error;
             }
 
             if(action != CDN_URL && strstr(tmp, "/user") == NULL)
@@ -735,7 +749,7 @@ actions_for_Settings:
                     {
                        if(strstr(tmp, "/system_ex") == NULL)
                        {
-                        msgok(NORMAL, "Invaild Path! enter a vaild path"); goto error;
+                        msgok(NORMAL, "INVALID Path! enter a vaild path"); goto error;
                        }
                     }
                 }
@@ -749,7 +763,7 @@ actions_for_Settings:
             // validate result (CDN)
             if(action == CDN_URL && strstr(tmp, "http://") == NULL)
             {
-                msgok(NORMAL, "Invaild CDN make sure its in the format http://CDN/  no Https urls are allowed");  goto error;
+                msgok(NORMAL, "INVALID CDN make sure its in the format http://CDN/  no Https urls are allowed");  goto error;
             }
 
             // update 
@@ -765,7 +779,7 @@ actions_for_Settings:
                 if(strstr(get->opt[action],".ttf") != NULL)
                     GLES2_fonts_from_ttf(get->opt[action]);
                 else
-                    msgok(NORMAL, "Invaild .ttf path Please ensure the file ext is .ttf");  goto error;
+                    msgok(NORMAL, "INVALID .ttf path Please ensure the file ext is .ttf");  goto error;
              }
 
             strcmp(get->opt[action], tmp);
@@ -775,23 +789,21 @@ actions_for_Settings:
             log_info("ERROR: entered %.20s", tmp);
             break;
 
-        case USB_PATH:
-            msgok(NORMAL, "This is NOT an editable Entry, it is created at App Boot");
-            break;
-
         // execute action, set flags
-        case 5: //STORE_ON_USB
-            if(get->opt[action])
+        case STORE_USB_SETTING: {//STORE_ON_USB
+            if (get->opt[action])
             {
-                get->opt[action]   = 0;
+                get->opt[action] = 0;
                 snprintf(get->opt[TMP_PATH], 255, "%s", "/user/app");
-            } else {
-                get->opt[action]   = 1;
+            }
+            else {
+                get->opt[action] = 1;
                 snprintf(get->opt[TMP_PATH], 255, "%s", "/mnt/usb0");
             }
             break;
+        }
 
-        case 6: { // clear cached images
+        case CLEAR_CACHE_SETTING: { // clear cached images
             loadmsg("Clearing Cached contents");
             unlink(STORE_LOG);
             FILE* fp = fopen(STORE_LOG, "w");
@@ -809,29 +821,62 @@ actions_for_Settings:
             break;
         }
 
-        case 7:
+        case USE_REFLECTION_SETTING: {
             use_reflection = (use_reflection) ? false : true;
             log_info("use_reflection: %d", use_reflection);
             break;
-        case 8:
+        }
+        case USE_PIXELSHADER_SETTING: {
             use_pixelshader = (use_pixelshader) ? false : true;
             log_info("use_pixelshader: %d", use_pixelshader);
             break;
-        case 9: //SAVE_OPTIONS:
+        }
+        case HOME_MENU_SETTING: {
+            //
+         if (is_connected_app) {
+            get->HomeMenu_Redirection = (get->HomeMenu_Redirection) ? false : true;
+            log_info("Turning Home menu %s", get->HomeMenu_Redirection ? "ON (ItemzFlow)" : "OFF (Orbis)" );
+
+            uint8_t* IPC_BUFFER = malloc(100);
+            int error = INVALID, wait = INVALID;
+        
+                if (get->HomeMenu_Redirection)
+                {
+                    error = IPCSendCommand(ENABLE_HOME_REDIRECT, IPC_BUFFER);
+                    if (error == NO_ERROR)
+                        log_debug("HOME MENU REDIRECT IS ENABLED");
+                }
+                else
+                {
+                    error = IPCSendCommand(DISABLE_HOME_REDIRECT, IPC_BUFFER);
+                    if (error == NO_ERROR)
+                        log_debug("HOME MENU REDIRECT IS DISABLED");
+                }       
+                free(IPC_BUFFER);
+            }
+            else
+                msgok(WARNING, "this feature is disabled\n Reason: The ItemzFlow Daemon is NOT connected");
+
+
+
+            break;
+        }
+        case SAVE_SETTINGS: {//SAVE_OPTIONS:
             log_info("%p, %d", l, action);
 
-            if( ! SaveOptions(get) )
+            if (!SaveOptions(get))
                 msgok(WARNING, "Save error, your changes were NOT saved");
             else
             {
                 msgok(NORMAL, "Your changes were saved successfully");
-                log_info( "Settings saved to %s", get->opt[INI_PATH]);
+                log_info("Settings saved to %s", get->opt[INI_PATH]);
                 // reload settings
                 LoadOptions(get);
             }
             break;
+        }
     }
-
+    GLES2_Refresh_for_settings();
     return;
 }
 

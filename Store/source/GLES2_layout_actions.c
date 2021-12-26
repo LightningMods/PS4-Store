@@ -413,3 +413,20 @@ void GLES2_scene_on_pressed_button(int button)
     GLES2_refresh_common();
 }
 
+
+void GLES2_Refresh_for_settings()
+{
+
+    if (!active_p) active_p = left_panel2;
+
+    GLES2_refresh_sysinfo();
+
+    layout_t* l = active_p;
+
+
+    layout_update_sele(l, 0); 
+
+
+    GLES2_refresh_common();
+}
+

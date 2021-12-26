@@ -71,7 +71,7 @@ void dump_frame(void)
         if( ! dump_buffer )
         {
 #if defined __ORBIS__
-            dump_buffer = lmalloc(resolution.x * resolution.y * sizeof(int));
+            dump_buffer = calloc(resolution.x * resolution.y * sizeof(int), sizeof(resolution.x * resolution.y * sizeof(int)));
 #else
             dump_buffer = calloc(resolution.x * resolution.y, sizeof(int));
 #endif

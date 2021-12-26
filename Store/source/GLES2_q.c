@@ -300,15 +300,14 @@ void *start_routine2(void *argument)
     while (1)
     {
         int read = sceHttpReadData(i->req, buf, sizeof(buf));
-        if (read <  0) { i->status = read; return read; }
+        if (read <  0) { i->status = read; goto cleanup; }
         if (read == 0) { i->status = CANCELED;   break; }
 
         ret = sceKernelWrite(fd, buf, read);
         if (ret < 0 || ret != read)
         {
-            if (ret < 0) { i->status = CANCELED; return ret; };
             i->status = CANCELED;
-            return -1;
+            goto cleanup;
         }
         total_read += read;
 
@@ -326,12 +325,34 @@ void *start_routine2(void *argument)
         if(total_read %(4096*128) == 0)
             log_debug( "%s, thread[%d] reading data, %lub / %lub (%.2f%%)", __FUNCTION__, i->idx, total_read, i->contentLength, i->progress);
     }
-    ret = sceKernelClose(fd);
 
     // don't wait before returning
-
     // clean thread / reset
-    if(i->req) sceHttpDeleteRequest(i->req);
+cleanup:
+    if (i->req > 0) {
+        ret = sceHttpDeleteRequest(i->req);
+        if (ret < 0) {
+            log_error("sceHttpDeleteRequest(%i) error: 0x%08X\n", i->req, ret);
+        }
+    }
+    if (i->connid > 0) {
+        ret = sceHttpDeleteConnection(i->connid);
+        if (ret < 0) {
+            log_error("sceHttpDeleteConnection(%i) error: 0x%08X\n", i->connid, ret);
+        }
+    }
+    if (i->tmpid > 0) {
+        ret = sceHttpDeleteTemplate(i->tmpid);
+        if (ret < 0) {
+            log_error("sceHttpDeleteTemplate(%i) error: 0x%08X\n", i->tmpid, ret);
+        }
+    }
+    if (fd > 0) {
+        ret = sceKernelClose(fd);
+        if (ret < 0) {
+            log_error("sceKernelClose(%i) error: 0x%08X\n", fd, ret);
+        }
+    }
 
     // trigger refresh of Queue active count
     left_panel2->vbo_s = ASK_REFRESH;

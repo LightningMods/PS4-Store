@@ -28,6 +28,7 @@
 #include <math.h>
 #include <time.h>
 #include "log.h"
+#include <user_mem.h> 
 
 #if defined (__ORBIS__)
 
@@ -88,6 +89,10 @@
 #define SCE_LNC_UTIL_ERROR_WAITING_READY_FOR_SUSPEND_TIMEOUT 0x80940021
 #define SCE_SYSCORE_ERROR_LNC_INVALID_STATE 0x80aa000a
 #define SCE_LNC_UTIL_ERROR_NOT_INITIALIZED 0x80940001
+
+#define APP_HOME_DATA_FOLDER "/user/app/NPXS29998"
+#define APP_HOME_DATA_TID "NPXS29998"
+#define STORE_TID "NPXS39041"
 
 /// from fileIO.c
 unsigned char *orbisFileGetFileContent( const char *filename );
@@ -188,18 +193,15 @@ void filledRect(int x1, int y1, int x2, int y2, unsigned char r, unsigned char g
 #define NUM_OF_SPRITES   (6)
 
 /// from ls_dir()
-int ls_dir(char *dirpath);
 bool if_exists(const char *path);
 int check_stat(const char *filepath);
 
-int get_item_count(void); // to remove
 typedef struct
 {
     char  *name;
-    //size_t size;
 } entry_t;
 entry_t *get_item_entries(const char *dirpath, int *count);
-void    free_item_entries(entry_t *e);
+void free_item_entries(entry_t* e, int num);
 
 // from my_rects.c
 vec2 px_pos_to_normalized(vec2 *pos);
@@ -237,12 +239,14 @@ void ORBIS_RenderFillRects(enum SH_type SL_program, const vec4 *rgba, const vec4
 void ORBIS_RenderDrawBox  (enum SH_type SL_program, const vec4 *rgba, const vec4 *rect);
 void GLES2_DrawFillingRect(vec4 *frect, vec4 *color, double *percentage);
 
+
 // reuse this type to index texts around!
 typedef struct
 {
     char *off;
     int   len;
 } item_idx_t;
+
 
 
 enum views
@@ -319,7 +323,7 @@ int sceKernelAvailableFlexibleMemorySize(size_t *free_mem);
 
 int notify(char *message);
 void escalate_priv(void);
-int initGL_for_the_store(void);
+int initGL_for_the_store(bool reload_apps,int ref_pages);
 int pingtest(int libnetMemId, int libhttpCtxId, const char* src);
 
 /*
@@ -348,6 +352,21 @@ typedef enum badge_t
     SELECTED,
     NUM_OF_BADGES
 } badge_t;
+
+
+#define ARRAYSIZE(a) ((sizeof(a) / sizeof(*(a))) / ((size_t)(!(sizeof(a) % sizeof(*(a))))))
+
+struct _ent {
+    char fname[4096];
+    uint32_t sz;
+};
+
+struct CVec
+{
+    uint32_t sz, cur;		// In BYTES
+    void* ptr;
+
+};
 
 typedef struct
 {
@@ -387,7 +406,7 @@ typedef struct
 item_idx_t *analyze_item_t      (item_t *items, int item_count);
 item_t     *analyze_item_t_v2   (item_t *items, int item_count);
 item_idx_t *search_item_t       (item_t *items, int item_count, enum token_name TN, char *pattern);
-item_t     *index_items_from_dir(const char *dirpath);
+item_t     *index_items_from_dir(const char *dirpath, const char* dirpath2);
 
 void build_char_from_items(char **data, item_idx_t *filter);
 item_idx_t *build_item_list(item_t *items, int item_count, enum token_name TN);

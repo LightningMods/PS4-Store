@@ -1,13 +1,25 @@
-
+#include <stdio.h>
+#include <stdlib.h>
 #include "utils.h"
 #include <pl_ini.h>
 #include <md5.h>
 #include <errno.h>
+#include <user_mem.h> 
 
 StoreOptions set,
             *get;
 
-extern item_t* i_apps; // Installed_Apps
+
+
+void* __stack_chk_guard = (void*)0xdeadbeef;
+
+void __stack_chk_fail(void)
+{
+    log_info("Stack smashing detected.");
+    msgok(FATAL, "Stack Smashing has been Detected");
+}
+
+extern item_t* all_apps; // Installed_Apps
 
 bool sceAppInst_done = false;
 int Lastlogcheck = 0;
@@ -51,6 +63,22 @@ int copyFile(char* sourcefile, char* destfile)
     }
 }
 
+int64_t sys_dynlib_load_prx(char* prxPath, int* moduleID)
+{
+    return (int64_t)syscall4(594, prxPath, 0, moduleID, 0);
+}
+
+int64_t sys_dynlib_unload_prx(int64_t prxID)
+{
+    return (int64_t)syscall1(595, (void*)prxID);
+}
+
+
+int64_t sys_dynlib_dlsym(int64_t moduleHandle, const char* functionName, void* destFuncOffset)
+{
+    return (int64_t)syscall3(591, (void*)moduleHandle, (void*)functionName, destFuncOffset);
+}
+
 void ProgSetMessagewText(int prog, const char* fmt, ...)
 {
 
@@ -66,19 +94,26 @@ void ProgSetMessagewText(int prog, const char* fmt, ...)
         sceMsgDialogProgressBarSetMsg(0, buff);
 }
 
+static bool touch_file(char* destfile)
+{
+    int fd = open(destfile, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+    if (fd > 0) {
+        close(fd);
+        return true; 
+    }
+    else
+        return false;
+}
+
 char* usbpath()
 {
-    int usb;
     static char usbbuf[100];
     usbbuf[0] = '\0';
     for(int x = 0; x <= 7; x++)
     {
         snprintf(usbbuf, sizeof(usbbuf), "/mnt/usb%i/.dirtest", x);
-        usb = sceKernelOpen(usbbuf, O_WRONLY | O_CREAT | O_TRUNC, 0777);
-        if(usb > 0)
+        if(touch_file(usbbuf))
         {
-            sceKernelClose(usb);
-
             snprintf(usbbuf, 100, "/mnt/usb%i", x);
 
             log_info("found usb = %s", usbbuf);
@@ -117,6 +152,7 @@ int MD5_hash_compare(const char* file1, const char* hash)
     }
 
     log_info( "Input HASH: %s", hash);
+    fclose(f1);
 
     return SAME_HASH;
 }
@@ -235,10 +271,8 @@ int LoadOptions(StoreOptions *set)
         if (!if_exists(buff))
         {
             log_warn( "No INI on USB");
-            if (sceKernelOpen("/user/app/NPXS39041/settings.ini", 0x0000, 0000) > 0)
+            if (if_exists("/user/app/NPXS39041/settings.ini"))
                 snprintf(set->opt[INI_PATH], 255, "%s", "/user/app/NPXS39041/settings.ini");
-            else
-                return -1;
         } else {
             pl_ini_load(&file, buff);
             log_info( "Loading ini from USB");
@@ -274,6 +308,8 @@ int LoadOptions(StoreOptions *set)
     // get an ints
     set->Legacy     = pl_ini_get_int(&file, "Settings", "Legacy", 0);
     set->StoreOnUSB = pl_ini_get_int(&file, "Settings", "StoreOnUSB", 0);
+    set->HomeMenu_Redirection = pl_ini_get_int(&file, "Settings", "Home_Redirection", 0);
+    set->Daemon_on_start = pl_ini_get_int(&file, "Settings", "Daemon_on_start", 1);
 
     log_info( "set->opt[INI_PATH]: %s", set->opt[INI_PATH]);
     log_info( "set->opt[USB_PATH]: %s", set->opt[USB_PATH]);
@@ -281,6 +317,8 @@ int LoadOptions(StoreOptions *set)
     log_info( "set->opt[TMP_PATH]: %s", set->opt[TMP_PATH]);
     log_info( "set->opt[CDN_URL ]: %s", set->opt[CDN_URL]);
     log_info( "set->legacy       : %i", set->Legacy);
+    log_info( "set->Daemon_...   : %s", set->Daemon_on_start ? "ON" : "OFF");
+    log_info(" set->HomeMen...   : %s", set->HomeMenu_Redirection ? "ItemzFlow (ON)" : "Orbis (OFF)");
     log_info( "set->StoreOnUSB   : %i", set->StoreOnUSB);
 
     /* Clean up */
@@ -326,12 +364,14 @@ int SaveOptions(StoreOptions *set)
     log_info( "set->opt[FNT_PATH]: %.20s...", set->opt[FNT_PATH]);
     log_info( "set->opt[CDN_URL ]: %s", set->opt[CDN_URL ]);
     log_info( "set->StoreOnUSB   : %i", set->StoreOnUSB);
+    log_info( "set->HomeMen...   : %s", set->HomeMenu_Redirection ? "ItemzFlow (ON)" : "Orbis (OFF)");
 
     /* Load values */
     pl_ini_set_string(&file, "Settings", "CDN",        set->opt[CDN_URL ]);
     pl_ini_set_string(&file, "Settings", "temppath",   set->opt[TMP_PATH]);
     pl_ini_set_string(&file, "Settings", "TTF_Font",   set->opt[FNT_PATH]);
     pl_ini_set_int   (&file, "Settings", "StoreOnUSB", set->StoreOnUSB);
+    pl_ini_set_int   (&file, "Settings", "Home_Redirection", set->HomeMenu_Redirection);
 
     int ret = pl_ini_save(&file, set->opt[INI_PATH]);
     chmod(set->opt[INI_PATH], 0777);
@@ -383,18 +423,22 @@ long CalcAppsize(char *path)
     fp = fopen(path, "r");
     if (fp == NULL) return 0;
             
-    /// log_info("DEBUG: app fd = %s", path);
-    if (fseek(fp, 0, SEEK_END) == -1) return 0;
+    if (fseek(fp, 0, SEEK_END) == -1) goto cleanup;
             
     off = ftell(fp);
-    if (off == (long)-1) return 0;
-    
-   /// log_info("[*] fseek_filesize - file: %s, size: %ld", path, off);
+    if (off == (long)-1) goto cleanup;
 
-    if (fclose(fp) != 0) return 0;
+    if (fclose(fp) != 0) goto cleanup;
     
     if(off) { checkedsize = calculateSize(off); return off; }
     else    { checkedsize = NULL; return 0; }
+
+cleanup:
+    if (fp != NULL)
+        fclose(fp);
+
+    return 0;
+
 }
 //////////////////////////////////////////////////////
 
@@ -421,12 +465,12 @@ void CheckLogSize()
 void die(char* message)
 {
     log_fatal( message);
-    sceSystemServiceLoadExec("invaild", 0);
+    sceSystemServiceLoadExec("INVALID", 0);
 }
 
-int msgok(enum MSG_DIALOG level, char* format, ...)
+void msgok(enum MSG_DIALOG level, char* format, ...)
 {
-    if(strlen(format) > 301) return 0x1337;
+    if(strlen(format) > 301) return;
 
     int ret = 0;
     sceSysmoduleLoadModule(ORBIS_SYSMODULE_MESSAGE_DIALOG);
@@ -475,7 +519,7 @@ int msgok(enum MSG_DIALOG level, char* format, ...)
     param.userMsgParam      = &userMsgParam;
 
     if (sceMsgDialogOpen(&param) < 0)
-           log_fatal( "MsgD failed"); ret = -1; // this ret is outer if!
+           log_fatal( "MsgD failed");
     
         
     
@@ -491,7 +535,7 @@ int msgok(enum MSG_DIALOG level, char* format, ...)
             memset(&result, 0, sizeof(result));
 
             if (0 > sceMsgDialogGetResult(&result))
-                         log_fatal( "MsgD failed"); ret = -2;
+                         log_fatal( "MsgD failed"); 
 
             sceMsgDialogTerminate();
             break;
@@ -509,12 +553,12 @@ int msgok(enum MSG_DIALOG level, char* format, ...)
         break;
     }
 
-    return ret;
+    return;
 }
 
-int loadmsg(char* format, ...)
+void loadmsg(char* format, ...)
 {
-    if(strlen(format) > 1024) return 0x1337;
+    if(strlen(format) > 1024) return;
 
     sceSysmoduleLoadModule(ORBIS_SYSMODULE_MESSAGE_DIALOG);
 
@@ -552,12 +596,12 @@ int loadmsg(char* format, ...)
     while (1)
     {
         stat = sceMsgDialogUpdateStatus();
-        if (stat == ORBIS_COMMON_DIALOG_STATUS_RUNNING) {
-            break;
-        }
+        if (stat == ORBIS_COMMON_DIALOG_STATUS_RUNNING) 
+             break;
+        
     }
 
-    return 0;
+    return;
 }
 
 //
@@ -661,7 +705,7 @@ int getjson(int Pagenumb, char* cdn, bool legacy)
     else
     {
         snprintf(http_req, 300, "%s/api.php?page=%i", cdn, Pagenumb);
-        if (open(destbuf, 0, 0) > 0)
+        if (if_exists(destbuf))
         {
             log_info("page %i exists", Pagenumb);
             if (!check_store_from_url(Pagenumb, get->opt[CDN_URL], MD5_HASH))
@@ -769,13 +813,237 @@ void setup_store_assets(StoreOptions* get)
         log_info("This is the New PKG Assets are already on PS4");
 }
 
+bool IS_ERROR(uint32_t a1)
+{
+    return a1 & 0x80000000;
+}
 
+//            sceSystemServiceKillApp();
+
+
+
+uint32_t Launch_App(char* TITLE_ID, bool silent) {
+
+    uint32_t sys_res = -1;
+
+    int libcmi = sceKernelLoadStartModule("/system/common/lib/libSceSystemService.sprx", 0, NULL, 0, 0, 0);
+    if (libcmi > 0)
+    {
+        log_info("Starting action Launch_Game_opt");
+
+
+        OrbisUserServiceLoginUserIdList userIdList;
+
+        log_info("ret %x", sceUserServiceGetLoginUserIdList(&userIdList));
+
+        for (int i = 0; i < 4; i++)
+        {
+            if (userIdList.userId[i] != 0xFF)
+            {
+                log_info("[%i] User ID 0x%x", i, userIdList.userId[i]);
+            }
+        }
+
+
+        LncAppParam param;
+        param.sz = sizeof(LncAppParam);
+
+        if (userIdList.userId[0] != 0xFF)
+            param.user_id = userIdList.userId[0];
+        else if (userIdList.userId[1] != 0xFF)
+            param.user_id = userIdList.userId[1];
+
+        param.app_opt = 0;
+        param.crash_report = 0;
+        param.check_flag = SkipSystemUpdateCheck;
+
+        log_info("l1 %x", sceLncUtilInitialize());
+
+
+        sys_res = sceLncUtilLaunchApp(TITLE_ID, 0, &param);
+        if (IS_ERROR(sys_res))
+        {
+            if (!silent) {
+                log_info("Switch 0x%x", sys_res);
+                switch (sys_res) {
+                case SCE_LNC_ERROR_APP_NOT_FOUND: {
+                    msgok(WARNING, "App is NOT Found ref: SCE_LNC_ERROR_APP_NOT_FOUND");
+                    break;
+                }
+                case SCE_LNC_UTIL_ERROR_ALREADY_RUNNING: {
+                    msgok(WARNING, "App is already running ref: SCE_LNC_UTIL_ERROR_ALREADY_RUNNING");
+                    break;
+                }
+                case SCE_LNC_UTIL_ERROR_ALREADY_RUNNING_KILL_NEEDED: {
+                    log_debug("ALREADY RUNNING KILL NEEDED");
+                    break;
+                }
+                case SCE_LNC_UTIL_ERROR_ALREADY_RUNNING_SUSPEND_NEEDED: {
+                    log_debug("ALREADY RUNNING SUSPEND NEEDED");
+                    break;
+                }
+                case SCE_LNC_UTIL_ERROR_SETUP_FS_SANDBOX: {
+                    msgok(WARNING, "App is NOT Launchable ref: SCE_LNC_UTIL_ERROR_SETUP_FS_SANDBOX");
+                    break;
+                }
+                case SCE_LNC_UTIL_ERROR_INVALID_TITLE_ID: {
+                    msgok(WARNING, "TITLE_ID IS NOT VAILED ref: SCE_LNC_UTIL_ERROR_SETUP_FS_SANDBOX");
+                    break;
+                }
+
+                default: {
+                    msgok(WARNING, "App Launch has failed with error code: 0x%x", sys_res);
+                    break;
+                }
+                }
+            }
+        }
+
+        log_info("launch ret 0x%x", sys_res);
+
+    }
+    else {
+        if(!silent)
+            msgok(WARNING, "Game Launch has failed with 0x%X", libcmi);
+    }
+
+    return sys_res;
+}
+
+extern struct retry_t* cf_tex;
+
+extern int total_pages;
+    
 void refresh_apps_for_cf(void)
 {
-    int before = i_apps[0].token_c;
+
+#if STANDALONE_APP==0
+    int before = all_apps[0].token_c;
     loadmsg("Reloading the Installed Apps List ...");
     log_debug("Reloading Installed Apps before: %i", before);
-    i_apps = index_items_from_dir("/user/app");
+    if (all_apps)
+        free(all_apps);
+    all_apps = index_items_from_dir("/user/app", "/mnt/ext0/user/app"); 
+    InitScene_5(ATTR_ORBISGL_WIDTH, ATTR_ORBISGL_HEIGHT);
+    InitScene_4(ATTR_ORBISGL_WIDTH, ATTR_ORBISGL_HEIGHT);
+    for (int i = 1; i < all_apps[0].token_c + 1; i++) {
+        check_tex_for_reload(i);
+        check_n_load_textures(i);
+    }
+
     sceMsgDialogTerminate();
-    log_debug("Done reloading # of App: %i, # of Apps added/removed: %i", i_apps[0].token_c,  i_apps[0].token_c - before);
+    log_debug("Done reloading # of App: %i, # of Apps added/removed: %i", all_apps[0].token_c,  all_apps[0].token_c - before);
+    
+#else
+
+char page_buf[100];
+snprintf(page_buf, sizeof(total_pages), "%i", total_pages);
+char* new_argv[11] = { "--reload_games", page_buf };
+
+log_info("reloading the App");
+unlink("/data/self/eboot.bin");
+copyFile("/user/app/NPXS39041/homebrew.elf", "/data/self/eboot.bin");
+sceSystemServiceLoadExec("/data/self/eboot.bin", &new_argv);
+
+#endif
+
+
+
+}
+
+
+void build_iovec(struct iovec** iov, int* iovlen, const char* name, const void* val, size_t len) {
+    int i;
+
+    if (*iovlen < 0)
+        return;
+
+    i = *iovlen;
+    *iov = (struct iovec*)realloc((void*)(*iov), sizeof(struct iovec) * (i + 2));
+    if (*iov == NULL) {
+        *iovlen = -1;
+        return;
+    }
+
+    (*iov)[i].iov_base = strdup(name);
+    (*iov)[i].iov_len = strlen(name) + 1;
+    ++i;
+
+    (*iov)[i].iov_base = (void*)val;
+    if (len == (size_t)-1) {
+        if (val != NULL)
+            len = strlen((const char*)val) + 1;
+        else
+            len = 0;
+    }
+    (*iov)[i].iov_len = (int)len;
+
+    *iovlen = ++i;
+}
+
+
+int mountfs(const char* device, const char* mountpoint, const char* fstype, const char* mode, uint64_t flags)
+{
+    struct iovec* iov = NULL;
+    int iovlen = 0;
+    int ret;
+
+    build_iovec(&iov, &iovlen, "fstype", fstype, -1);
+    build_iovec(&iov, &iovlen, "fspath", mountpoint, -1);
+    build_iovec(&iov, &iovlen, "from", device, -1);
+    build_iovec(&iov, &iovlen, "large", "yes", -1);
+    build_iovec(&iov, &iovlen, "timezone", "static", -1);
+    build_iovec(&iov, &iovlen, "async", "", -1);
+    build_iovec(&iov, &iovlen, "ignoreacl", "", -1);
+
+    if (mode) {
+        build_iovec(&iov, &iovlen, "dirmask", mode, -1);
+        build_iovec(&iov, &iovlen, "mask", mode, -1);
+    }
+
+    log_info("##^  [I] Mounting %s \"%s\" to \"%s\" \n", fstype, device, mountpoint);
+    ret = nmount(iov, iovlen, flags);
+    if (ret < 0) {
+        log_info("##^  [E] Failed: %d (errno: %d).\n", ret, errno);
+        goto error;
+    }
+    else {
+        log_info("##^  [I] Success.\n");
+    }
+
+error:
+    return ret;
+}
+
+#define SCE_LIBC_MALLOC_MANAGED_SIZE_VERSION (0x0001U)
+
+#ifndef SCE_LIBC_INIT_MALLOC_MANAGED_SIZE
+#define SCE_LIBC_INIT_MALLOC_MANAGED_SIZE(mmsize) do { \
+	mmsize.size = sizeof(mmsize); \
+	mmsize.version = SCE_LIBC_MALLOC_MANAGED_SIZE_VERSION; \
+	mmsize.reserved1 = 0; \
+	mmsize.maxSystemSize = 0; \
+	mmsize.currentSystemSize = 0; \
+	mmsize.maxInuseSize = 0; \
+	mmsize.currentInuseSize = 0; \
+} while (0)
+#endif
+
+typedef struct SceLibcMallocManagedSize {
+    uint16_t size;
+    uint16_t version;
+    uint32_t reserved1;
+    size_t maxSystemSize;
+    size_t currentSystemSize;
+    size_t maxInuseSize;
+    size_t currentInuseSize;
+} SceLibcMallocManagedSize;
+
+void print_memory()
+{
+    SceLibcMallocManagedSize ManagedSize;
+    SCE_LIBC_INIT_MALLOC_MANAGED_SIZE(ManagedSize);
+    malloc_stats_fast(&ManagedSize);
+
+    log_info("PS4 Memory Stats: CurrentSystemSize: %s, CurrentInUseSize: %s, MaxSystemSize: %s, MaxInUseSize: %s", calculateSize(ManagedSize.currentSystemSize), calculateSize(ManagedSize.currentInuseSize), calculateSize(ManagedSize.maxSystemSize), calculateSize(ManagedSize.maxInuseSize));
 }

@@ -41,7 +41,7 @@ extern layout_t *active_p,     // the active panel moves selector around
 */
 extern item_t *games,
              *groups,
-             *i_apps; // Installed_Apps
+             *all_apps; // Installed_Apps
 /*
     auxiliary array of item_index_t:
     - shared for Search/Groups
@@ -68,6 +68,7 @@ extern dl_arg_t        *pt_info;
 // GLES2_layout
 void layout_update_fsize(layout_t *l);
 void layout_update_sele (layout_t *l, int movement);
+void GLES2_Refresh_for_settings();
 void layout_set_active  (layout_t *l);
 void swap_panels(void);
 void GLES2_render_layout_v2(layout_t *l, int unused);

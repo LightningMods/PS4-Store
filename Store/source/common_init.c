@@ -9,7 +9,8 @@
 #include <stdbool.h>
 #include <utils.h>
 #include <errno.h>
-
+#include <sys/socket.h>
+#include <user_mem.h> 
 extern bool dump;
 
 #if defined (__ORBIS__)
@@ -83,7 +84,6 @@ extern StoreOptions set,
                    *get;
 
 
-
 /* XXX: patches below are given for Piglet module from 4.74 Devkit PUP */
 static void pgl_patches_cb(void* arg, uint8_t* base, uint64_t size)
 {
@@ -100,30 +100,192 @@ static void pgl_patches_cb(void* arg, uint8_t* base, uint64_t size)
     /* Inform Piglet that we have shader compiler module loaded */
     *(int32_t*)(base + 0xB2E24) = s_shcomp_module;
 }
-// reuses orbislink code from new liborbis (-lorbis)
-int initGL_for_the_store(void)
+
+
+bool is_connected_app = false;
+
+extern uint8_t daemon_eboot[];
+extern int32_t daemon_eboot_size;
+
+
+#define  LATEST_DAEMON_VERSION 0x1001
+static int (*rejail_multi)(void) = NULL;
+
+bool is_daemon_outdated(void)
+{
+    int daemon_ver = INVALID;
+
+    pl_ini_file file;
+    if (!if_exists(DAEMON_PATH"/daemon.ini"))
+        return false;
+    else
+    {
+        log_debug("Daemon INI Does exist");
+        pl_ini_load(&file, DAEMON_PATH"/daemon.ini");
+        daemon_ver = pl_ini_get_int(&file, "Daemon", "version", 0x1337);
+        log_info("Daemon Version: %x, Latest Version: %x, Is Outdated?: %s", daemon_ver, LATEST_DAEMON_VERSION, daemon_ver == LATEST_DAEMON_VERSION ? "No" : "Yes");
+
+        /* Clean up */
+        pl_ini_destroy(&file);
+    }
+
+    return (bool)daemon_ver == LATEST_DAEMON_VERSION;
+}
+
+bool init_daemon_services(bool redirect)
+{
+
+
+    uint8_t* IPC_BUFFER = malloc(100);
+    int fd = -1;
+    if (!if_exists(DAEMON_PATH) || !is_daemon_outdated())
+    {
+        if (!!mountfs("/dev/da0x4.crypt", "/system", "exfatfs", "511", 0x00010000))
+        {
+            log_error("mounting /system failed with %s", strerror(errno));
+            return false;
+        }
+        else
+        {
+
+            log_error("Remount Successful");
+            //Delete the folder and all its files
+            rmtree(DAEMON_PATH);
+
+            mkdir(DAEMON_PATH, 0777);
+            mkdir(DAEMON_PATH"/Media", 0777);
+            mkdir(DAEMON_PATH"/sce_sys", 0777);
+            if (copyFile("/mnt/sandbox/pfsmnt/NPXS39041-app0/Media/jb.prx", DAEMON_PATH"/Media/jb.prx") != -1 && copyFile("/system/vsh/app/NPXS21007/sce_sys/param.sfo", DAEMON_PATH"/sce_sys/param.sfo") != -1)
+            {
+                
+                if ((fd = open(DAEMON_PATH"/eboot.bin", O_WRONLY | O_CREAT | O_TRUNC, 0777)) > 0 && fd != -1) {
+                    write(fd, daemon_eboot, daemon_eboot_size);
+                    close(fd);
+
+                    pl_ini_file file;
+                    pl_ini_create(&file);
+                    pl_ini_set_int(&file, "Daemon", "version", LATEST_DAEMON_VERSION);
+                    pl_ini_save(&file, DAEMON_PATH"/daemon.ini");
+                    chmod(DAEMON_PATH"/daemon.ini", 0777);
+                }
+                else
+                {
+                    log_error("Creating the Daemon eboot failed to create: %s", strerror(errno));
+                    return false;
+                }
+            }
+            else
+            {
+                log_error("Copying Daemon files failed");
+                return false;
+            }
+            IPCSendCommand(DEAMON_UPDATE, IPC_BUFFER);
+        }
+    }
+
+    //Launch Daemon with silent
+    uint32_t res = Launch_App("ITEM00002", true);
+    if (res != SCE_LNC_UTIL_ERROR_ALREADY_RUNNING)
+    {
+        if (rejail_multi != NULL)
+        {
+            int libcmi = 1;
+            sys_dynlib_load_prx("/system/vsh/app/ITEM00002/Media/jb.prx", &libcmi);
+            if (!sys_dynlib_dlsym(libcmi, "rejail_multi", &rejail_multi))
+                rejail_multi();
+        }
+        sceSystemServiceLoadExec("/data/self/eboot.bin");
+    }
+    
+
+    loadmsg("Waiting for Daemon's Welcome Response (max 1 min)");
+
+    int error = INVALID, wait = INVALID;
+    // Wait for the Daemon to respond
+    do {
+
+        if (wait >= 60)
+        {
+            log_error("Daemon timed out");
+            return false;
+        }
+        else
+            wait++;
+
+        sleep(1);
+
+     //File Flag the Daemon creates when initialization is complete
+    // and the Daemon IPC server is active
+    } while (!if_exists("/system_tmp/IPC_init")); 
+    
+     error = IPCSendCommand(CONNECTION_TEST, IPC_BUFFER);
+     log_info("---- Error: %s", error == INVALID ? "Failed to Connect" : "Success");
+     if (error == NO_ERROR) {
+         sceMsgDialogTerminate();
+         log_debug("Took the Daemon %i extra commands attempts to respond", wait);
+         is_connected_app = true;
+      }
+    
+
+
+    if (is_connected_app)
+    {
+        if (redirect) // is setting get->HomeMenu_Redirection enabled
+        {
+            log_info("Redirect on with app connected");
+
+            error = IPCSendCommand(ENABLE_HOME_REDIRECT, IPC_BUFFER);
+            if (error == NO_ERROR) {
+                log_debug("HOME MENU REDIRECT IS ENABLED");
+
+            }
+
+        }
+    }
+    else
+        return false;
+
+
+    free(IPC_BUFFER);
+
+    return true;
+
+}
+
+int initGL_for_the_store(bool reload_apps, int ref_pages)
 {
     int ret = 0;
+    char tmp[100];
 
     unlink(STORE_LOG);
+    //Keep people from backing up the Sig file
+    unlink("/user/app/NPXS39041/homebrew.elf.sig");
 
     /*-- INIT LOGGING FUNCS --*/
     log_set_quiet(false);
     log_set_level(LOG_DEBUG);
     FILE* fp = fopen(STORE_LOG, "w");
     log_add_fp(fp, LOG_DEBUG);
+    //USB LOGGING
+    if (usbpath() != NULL)
+    {
+        sprintf(&tmp[0], "%s/Store-log.txt", usbpath());
+        unlink(tmp);
+        fp = fopen(tmp, "w");
+        log_add_fp(fp, LOG_DEBUG);
+    }
     /* -- END OF LOGINIT --*/
 
 
     log_info("------------------------ Store[GL] Compiled Time: %s @ %s  -------------------------", __DATE__, __TIME__);
-    log_info(" --------------------------------  STORE Version: %s  -----------------", completeVersion);
-    log_info("----------------------------------------------- -------------------------");
+    log_info(" ---------------------------  STORE Version: %s ------------------------------------", completeVersion);
+if(reload_apps)
+    log_info("----------------------------  reload_apps: %s, Total_pages % i ----------------------", reload_apps ? "true" : "false", ref_pages);
 
     get = &set;
 
     // internals: net, user_service, system_service
     ret = loadModulesVanilla();
-
     // pad
     ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_PAD);
     if(ret) return -1;
@@ -132,7 +294,7 @@ int initGL_for_the_store(void)
     if(ret) return -1;
     //MSGDIALOG
     ret = sceSysmoduleLoadModule(ORBIS_SYSMODULE_MESSAGE_DIALOG);
-    if(ret) return -1;
+    if(ret) return -1; 
 
     ret =  sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_NETCTL);
     if(ret) return -1;
@@ -146,24 +308,17 @@ int initGL_for_the_store(void)
     ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_SSL);
     if(ret) return -1;
 
-    ret = sceSysmoduleLoadModuleInternal(0x80000018);
+    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_COMMON_DIALOG); 
     if(ret) return -1;
     
-    ret = sceSysmoduleLoadModuleInternal(0x80000026);  // 0x80000026
+    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_SYSUTIL);
     if(ret) return -1;
     
-    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_BGFT);  // 0x80000026
+    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_BGFT);  
     if(ret) return -1;
     
-    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_APPINSTUTIL);  // 0x80000026 0x80000037
+    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_APPINSTUTIL);  
     if(ret) return -1;
-    
-    sceCommonDialogInitialize();
-    sceMsgDialogInitialize();
-
-    ret = orbisPadInit();
-    if(ret != 1) return -2;
-
 
     //Dump code and sig hanlder
     struct sigaction new_SIG_action;
@@ -172,12 +327,21 @@ int initGL_for_the_store(void)
     sigemptyset(&new_SIG_action.sa_mask);
     new_SIG_action.sa_flags = 0;
 
-    for (int i = 0; i < 43; i++)
-    { 
-       // if(i != 10 && i != 12)
-        sigaction(i, &new_SIG_action, NULL);
+    for (int i = 0; i < 43; i++) {
+        if(i != SIGUSR2)
+           sigaction(i, &new_SIG_action, NULL);
     }
 
+
+    OrbisUserServiceInitializeParams params;
+    memset(&params, 0, sizeof(params));
+    params.priority = 700;
+
+    sceCommonDialogInitialize();
+    sceMsgDialogInitialize();
+
+    ret = orbisPadInit();
+    if (ret != 1) return -2;
 
 
     if(MD5_hash_compare("/user/app/NPXS39041/pig.sprx",   "854a0e5556eeb68c23a97ba024ed2aca") == SAME_HASH
@@ -192,9 +356,30 @@ int initGL_for_the_store(void)
 
         if(! patch_module("pig.sprx", &pgl_patches_cb, NULL, /*debugnetlevel*/3)) return -3;
 
-        ret = LoadOptions(get);
-        if(!ret)
-            msgok(WARNING, "Could NOT find/open the INI File");
+        if(!LoadOptions(get)) msgok(WARNING, "Could NOT find/open the INI File");
+
+        if (get->Daemon_on_start)
+        {
+            if (!init_daemon_services(get->HomeMenu_Redirection))
+                msgok(WARNING, "The Itemzflow init_daemon_services failed\nThis may cause some things not work\nif you have a USB Inserted check the log");
+            else
+                log_debug("The Itemzflow init_daemon_services succeeded");
+        }
+        else
+            msgok(WARNING, "The Itemzflow Daemon Auto start is turned off\nThis may cause some things not work");
+        
+
+        
+
+        if (reload_apps)
+        {
+            if (get->Legacy)
+                sceSystemServiceLoadExec("/data/self/eboot.bin", NULL);
+
+            total_pages = check_store_from_url(0, get->opt[CDN_URL], COUNT);
+            if(total_pages == ref_pages)
+                 return 0;
+        }
 
         loadmsg("Downloading and Caching Website files....");
 
@@ -232,7 +417,12 @@ int initGL_for_the_store(void)
         sceMsgDialogTerminate();
     }
     else
+    {
+        //Delete SPRXS with wrong hash, if they dont exist loader will redownload
+        unlink("/user/app/NPXS39041/pig.sprx");
+        unlink("/user/app/NPXS39041/shacc.sprx");
         msgok(FATAL, "SPRX ARE NOT THE SAME HASH ABORTING");
+    }
 
 
     // all fine.

@@ -175,7 +175,7 @@ static void layout_compose_text(layout_t *l, int idx, vec2 *pen, bool save_text)
                     switch( idx )
                     {
                         case 0:  ret =   games->token_c;  break; 
-                        case 1:  ret =  i_apps->token_c;  break; // Installed_Apps has first reserved
+                        case 1:  ret =  all_apps->token_c;  break; // Installed_Apps has first reserved
                         case 2:  ret =  groups->token_c;  break; // Groups
                         case 3:  req_status = COMPLETED;  break; // Ready_to_install
                         case 4:  req_status =   RUNNING;  break; // Queue
@@ -240,7 +240,7 @@ static void layout_compose_text(layout_t *l, int idx, vec2 *pen, bool save_text)
                 // zerofill for second line
                 memset(&tmp[0], 0, sizeof(tmp));
                 // get the option value
-                if(idx < NUM_OF_STRINGS)
+                if(idx < NUM_OF_STRINGS && idx != HOME_MENU_SETTING)
                 {   // shorten any entry longer than n chars
                     if(strlen(get->opt[ idx ]) > 40) format = "%.40s...";
 
@@ -250,10 +250,10 @@ static void layout_compose_text(layout_t *l, int idx, vec2 *pen, bool save_text)
                 {   // to extend for more options
                     switch(idx)
                     {
-                        case 5: snprintf(&tmp[0], 63, format, get->StoreOnUSB ? "True" : "False"); break;
-                        case 6: break;
-                        case 7: snprintf(&tmp[0], 63, format, use_reflection  ? "True" : "False"); break;
-                        case 8: snprintf(&tmp[0], 63, format, use_pixelshader ? "True" : "False"); break;
+                        case STORE_USB_SETTING: snprintf(&tmp[0], 63, format, get->StoreOnUSB ? "True" : "False"); break;
+                        case HOME_MENU_SETTING: snprintf(&tmp[0], 63, format, get->HomeMenu_Redirection ? "ItemzFlow (ON)" : "Orbis (OFF)"); break;
+                        case USE_REFLECTION_SETTING: snprintf(&tmp[0], 63, format, use_reflection  ? "True" : "False"); break;
+                        case USE_PIXELSHADER_SETTING: snprintf(&tmp[0], 63, format, use_pixelshader ? "True" : "False"); break;
                         default: break;
                     }
                 }

@@ -1,30 +1,10 @@
-
-
-
 #include "defines.h"
 #include <utils.h>
-//extern void *(*libc_memset)(void *, int, size_t); ?
+#include <sys/signal.h>
 
 int libcmi = -1;
-int (*jailbreak_me)(void);
 
-int64_t sys_dynlib_load_prx(char* prxPath, int* moduleID)
-{
-    return (int64_t)syscall4(594, prxPath, 0, moduleID, 0);
-}
-
-int64_t sys_dynlib_unload_prx(int64_t prxID)
-{
-    return (int64_t)syscall1(595, (void*)prxID);
-}
-
-
-int64_t sys_dynlib_dlsym(int64_t moduleHandle, const char* functionName, void *destFuncOffset)
-{
-    return (int64_t)syscall3(591, (void*)moduleHandle, (void*)functionName, destFuncOffset);
-}
-
-
+//GlConfig* GlConf;
 OrbisPadConfig *confPad;
 bool flag=true;
 
@@ -35,7 +15,8 @@ struct timeval  t1, t2;
 #define DELTA  (123) // dpad delta movement
 
 int* (*crash_test)();
-
+static int (*jailbreak_me)(void) = NULL;
+static int (*rejail_multi)(void) = NULL;
 
 void updateController()
 {
@@ -85,6 +66,7 @@ void updateController()
         || confPad->padDataCurrent->ly > (127 + DELTA))
         {
             log_info( "Down pressed");
+
             GLES2_scene_on_pressed_button(116);
         }
         else
@@ -119,13 +101,12 @@ void updateController()
         {
             log_info( "Cross pressed");
             GLES2_scene_on_pressed_button(53);
-            //notify("Notify test:Passed");
         }
 
         if(orbisPadGetButtonPressed(ORBISPAD_SQUARE))
         {
+
             log_info( "Square pressed");
-            //crash_test();
             GLES2_scene_on_pressed_button(SQU);
         }
         if(orbisPadGetButtonPressed(ORBISPAD_L1))
@@ -139,23 +120,22 @@ void updateController()
         }
         if(orbisPadGetButtonPressed(ORBISPAD_R1))
         {
-            log_info( "R1 pressed");
-        /*  int mId, hcId;
-            int ret = pingtest(mId, hcId, "https://10.0.0.2");
-            log_info( "pingtest ret:%d", ret); */
+           
+                
         }
         if(orbisPadGetButtonPressed(ORBISPAD_R2))
         {
-            log_info( "R2 pressed");
+        }
+        if (orbisPadGetButtonPressed(ORBISPAD_OPTIONS))
+        {
+            log_info("Exit Called");
+            raise(SIGQUIT);
         }
     }
 }
 
 void finishApp()
 {
-    //orbisAudioFinish();
-    //orbisKeyboardFinish();
-    //orbisGlFinish();
     orbisPadFinish();
     orbisNfsFinish();
 }
@@ -163,22 +143,22 @@ void finishApp()
 static bool initAppGl()
 {
     int ret = orbisGlInit(ATTR_ORBISGL_WIDTH, ATTR_ORBISGL_HEIGHT);
-    if(ret>0)
+    if (ret > 0)
     {
         glViewport(0, 0, ATTR_ORBISGL_WIDTH, ATTR_ORBISGL_HEIGHT);
-        ret=glGetError();
-        if(ret)
+        ret = glGetError();
+        if (ret)
         {
-            log_info( "[%s] glViewport failed: 0x%08X",__FUNCTION__,ret);
+            log_info("[%s] glViewport failed: 0x%08X", __FUNCTION__, ret);
             return false;
         }
-//      glClearColor(0.f, 0.f, 1.f, 1.f);          // blue RGBA
-        glClearColor( 0.1211, 0.1211, 0.1211, 1.); // background color
+        //      glClearColor(0.f, 0.f, 1.f, 1.f);          // blue RGBA
+        glClearColor(0.1211, 0.1211, 0.1211, 1.); // background color
 
-        ret=glGetError();
-        if(ret)
+        ret = glGetError();
+        if (ret)
         {
-            log_info( "[%s] glClearColor failed: 0x%08X",__FUNCTION__,ret);
+            log_info("[%s] glClearColor failed: 0x%08X", __FUNCTION__, ret);
             return false;
         }
         return true;
@@ -188,15 +168,17 @@ static bool initAppGl()
 
 bool initApp()
 {
-    //orbisNfsInit(NFSEXPORT);
-    //orbisFileInit();
-//  int ret=initOrbisLinkApp();
+#if defined (USE_NFS)
+    orbisNfsInit(NFSEXPORT);
+    orbisFileInit();
+    int ret = initOrbisLinkApp();
+#endif
 
     sceSystemServiceHideSplashScreen();
 
-    confPad = orbisPadGetConf(); 
+    confPad = orbisPadGetConf();
 
-    if( ! initAppGl() ) return false;
+    if (!initAppGl()) return false;
 
     return true;
 }
@@ -204,74 +186,75 @@ bool initApp()
 
 /// for timing, fps
 #define WEN  (2048)
-unsigned int frame   = 1,
-             time_ms = 0;
+unsigned int frame = 1,
+time_ms = 0;
 
-int main(int argc, char *argv[])
+
+int main(int argc, char* argv[])
 {
-  
+
     int ret = -1;
     /*
         prepare pad and piglet modules in advance,
         read /data/orbislink/orbislink_config.ini for debugnet
-
         (no nfs, audio init yet...)
     */
-    //debugNetInit("10.0.0.2", 18198, 3);
-
-    // to access /user and notify() we need full privileges...
-
-    /* load some required modules */
 #if defined (USE_NFS)
+    debugNetInit("10.0.0.2", 18198, 3);
 
-    // to access /user and notify() we need full privileges
-//  escalate_priv();
     ret = initOrbisLinkAppVanillaGl();
 
     /* some nfs setup */
-//  ret = orbisNfsInit("nfs://10.0.0.2/hostapp");
     ret = orbisNfsInit("nfs://10.0.0.2/Archive/PS4-work/orbisdev/orbisdev-samples/linux_es2goodness");
-//  ret = orbisNfsInit("nfs://192.168.2.61/home/alfa/NFS/hostapp");
 
-    log_info( "orbisNfsInit return: %x", ret);
+    log_info("orbisNfsInit return: %x", ret);
     sleep(1);
 #else
 
     /* load custom .prx, resolve and call a function */
-    sys_dynlib_load_prx("/app0/Media/jb.prx", &libcmi);
 
+
+    sys_dynlib_load_prx("/app0/Media/jb.prx", &libcmi);
     ret = sys_dynlib_dlsym(libcmi, "jailbreak_me", &jailbreak_me);
     if (!ret)
     {
-        log_info( "jailbreak_me resolved from PRX");
+        log_info("jailbreak_me resolved from PRX");
 
-        if((ret = jailbreak_me() != 0)) goto error;
+        if ((ret = jailbreak_me() != 0)) goto error;
     }
     else
         goto error;
 
-    if((ret = initGL_for_the_store() < 0)) goto error;
+
+    if (strstr(argv[0], "--reload_games") != NULL)
+    {
+        log_debug("arg[1] %s", argv[1]);
+        if ((ret = initGL_for_the_store(true, atoi(argv[1])) < 0)) goto error;
+        loadmsg("Loading Installed Apps");
+    }
+    else {
+        if ((ret = initGL_for_the_store(false, -1) < 0)) goto error;
+    }
+
+
 
 #endif
 
-    //if(!ret) sceKernelIccSetBuzzer(1);
 
     // init some libraries
     flag = initApp();
 
     ret = sceSysmoduleLoadModule(0x009A);  // internal FreeType, libSceFreeTypeOl
 
-    int moduleId = sceKernelLoadStartModule("/system/common/lib/libSceSysUtil.sprx", 0, NULL, 0, 0, 0);
-
     // more test
     ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_NETCTL);
-    log_info( "%s SCE_SYSMODULE_INTERNAL_NETCTL: 0x%08X",__FUNCTION__, ret);
+    log_info("%s SCE_SYSMODULE_INTERNAL_NETCTL: 0x%08X", __FUNCTION__, ret);
 
     ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_HTTP);
-    log_info( "%s SCE_SYSMODULE_INTERNAL_HTTP: 0x%08X",__FUNCTION__, ret);
+    log_info("%s SCE_SYSMODULE_INTERNAL_HTTP: 0x%08X", __FUNCTION__, ret);
 
     ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_SSL);
-    log_info( "%s SCE_SYSMODULE_INTERNAL_SSL: 0x%08X",__FUNCTION__, ret);
+    log_info("%s SCE_SYSMODULE_INTERNAL_SSL: 0x%08X", __FUNCTION__, ret);
 
     // feedback
     log_info("Here we are!");
@@ -279,56 +262,63 @@ int main(int argc, char *argv[])
     /* init GLES2 stuff */
 
     // demo-font.c init
-    es2init_text( ATTR_ORBISGL_WIDTH, ATTR_ORBISGL_HEIGHT );
+    es2init_text(ATTR_ORBISGL_WIDTH, ATTR_ORBISGL_HEIGHT);
     // ES_UI
-    GLES2_scene_init( ATTR_ORBISGL_WIDTH, ATTR_ORBISGL_HEIGHT );
+    GLES2_scene_init(ATTR_ORBISGL_WIDTH, ATTR_ORBISGL_HEIGHT);
 
     /// reset timers
     time_ms = get_time_ms();
     gettimeofday(&t1, NULL);
     t2 = t1;
 
+
     /// enter main render loop
-    while(flag)
+    while (flag)
     {
-        updateController();
 
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        ret = glGetError();
-        if(ret) {
-            log_info( "[ORBIS_GL] glClear failed: 0x%08X", ret);
-            //goto err;
-        }
+            updateController();
 
-        /// draw !
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            ret = glGetError();
+            if (ret) {
+                log_info("[ORBIS_GL] glClear failed: 0x%08X", ret);
+                //goto err;
+            }
 
-        // ES_UI
-        GLES2_scene_render();
 
-        /// get timing, fps
-        if( ! (frame %WEN) )
-        {
-            unsigned int now = get_time_ms();
-            log_info( "frame: %d, took: %ums, fps: %.3f", frame, now - time_ms,
-                                               ((double)WEN / (double)(now - time_ms) * 1000.f));
-            time_ms = now;
-        }
-        frame++;
+            // ES_UI
+            GLES2_scene_render();
 
-        if(1) // update for the GLES uniform time
-        {
-            gettimeofday( &t2, NULL );
-            // calculate delta time
-            dt = t2.tv_sec - t1.tv_sec + (t2.tv_usec - t1.tv_usec) * 1e-6;
+            /// get timing, fps
+            if (!(frame % WEN))
+            {
+                unsigned int now = get_time_ms();
+                log_info("frame: %d, took: %ums, fps: %.3f", frame, now - time_ms,
+                    ((double)WEN / (double)(now - time_ms) * 1000.f));
 
-            t1 = t2;
-            // update total time
-            u_t += dt;
-        }
+                print_memory();
 
-        orbisGlSwapBuffers();  /// flip frame
+                time_ms = now;
+            }
+            frame++;
+            
 
-        dump_frame();
+            if (1) // update for the GLES uniform time
+            {
+                gettimeofday(&t2, NULL);
+                // calculate delta time
+                dt = t2.tv_sec - t1.tv_sec + (t2.tv_usec - t1.tv_usec) * 1e-6;
+
+                t1 = t2;
+                // update total time
+                u_t += dt;
+            }
+            orbisGlSwapBuffers();  /// flip frame
+
+
+            dump_frame();
+
+        
     }
 
 error:

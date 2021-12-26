@@ -39,7 +39,7 @@
 #include <string.h>
 
 #include <freetype-gl.h>  // links against libfreetype-gl
-
+#include <user_mem.h> 
 
 #if defined (__ORBIS__)
 

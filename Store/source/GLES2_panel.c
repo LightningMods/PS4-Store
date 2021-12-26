@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
+
 #if defined(__ORBIS__)
     #include <debugnet.h>
 #endif
@@ -111,11 +112,11 @@ item_t *analyze_item_t_v2(item_t *items, int item_count)
         log_info("%d %s: %d", i, ret[i].token_d[0].off,
                                  ret[i].token_c);
         // shrink buffers, remember +1 !!!
-        ret[i].token_d = realloc(ret[i].token_d, (ret[i].token_c +1)
+        ret[i].token_d = realloc(ret[i].token_d, (ret[i].token_c + 1)
                                                * sizeof(item_idx_t));
         check += ret[i].token_c;
     }
-    log_info("Sorted %d items across %d Groups", check, ret[0].token_c);
+    log_info("Sorted %d items across %d Groups", check, ret[0].token_c + 1);
 #endif
 
     return ret;

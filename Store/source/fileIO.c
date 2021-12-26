@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "log.h"
-
+#include <user_mem.h> 
 
 size_t _orbisFile_lastopenFile_size;
 // --------------------------------------------------------- buf_from_file ---

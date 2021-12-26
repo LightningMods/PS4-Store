@@ -1,7 +1,7 @@
 
 #include "Header.h"
 #include <stdarg.h>
-#include <stdlib.h> // calloc
+#include <user_mem.h> 
 #include <installpkg.h>
 #include <stdbool.h>
 
@@ -10,7 +10,7 @@
 
 int PKG_ERROR(const char* name, int ret)
 {
-    msgok(WARNING, "Install Failed with codeHEX: %x Int: %ifrom Function %s", ret, ret, name);
+    msgok(WARNING, "Install Failed with code\nHEX: %x Int: %i\nfrom Function %s", ret, ret, name);
     log_error( "%s error: %i", ret);
 
     return ret;
@@ -135,6 +135,7 @@ void bgft_fini(void) {
 /* install package wrapper:
    init, (install), then clean AppInstUtil and BGFT
    for next install */
+extern bool Download_icons;
 
 uint8_t pkginstall(const char *path)
 {
@@ -212,7 +213,10 @@ err_appinstutil_finalize:
 
     log_info( "%s(%s), %s done.", __FUNCTION__, path, title_id);
 
-    refresh_apps_for_cf();
+    if (!Download_icons)
+        refresh_apps_for_cf();
+    else
+        log_warn("CF NOT YET INIT");
 
     return 0;
 }

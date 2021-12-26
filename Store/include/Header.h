@@ -14,6 +14,7 @@
 #include <Ssl.h>
 #include <sys/_types.h>
 #include <sys/fcntl.h> //O_CEAT
+#include <user_mem.h> 
 
 #define SCE_KERNEL_MAX_MODULES 256
 #define SCE_KERNEL_MAX_NAME_LENGTH 256
@@ -27,7 +28,7 @@
 
 #define IS_INTERNAL 0
 
-int loadmsg(char* format, ...);
+
 int pingtest(int libnetMemId, int libhttpCtxId, const char* src);
 int32_t netInit(void);
 #define DIFFERENT_HASH 1
@@ -103,7 +104,7 @@ void logshit(char* format, ...);
 
 
 #define VERSION_MAJOR 2
-#define VERSION_MINOR 00
+#define VERSION_MINOR 01
 
 #define BUILD_YEAR_CH0 (__DATE__[ 7])
 #define BUILD_YEAR_CH1 (__DATE__[ 8])

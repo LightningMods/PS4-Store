@@ -9,15 +9,16 @@
 */
 
 #include "defines.h"
-
+#include <semaphore.h> 
 #include <memory.h> // lmalloc()
+
 
 extern vec4 c[8];       // palette
 extern vec2 resolution;
 extern int *dump_buffer;
 // import Installed_Apps AOS
 extern layout_t *icon_panel;
-extern item_t   *i_apps;
+extern item_t   *all_apps;
 extern double    u_t;
 extern GLuint    fallback_t;  // fallback texture
 
@@ -128,7 +129,7 @@ void create_tcache(layout_t *l)
         if( ! dump_buffer )
         {
 #if defined __ORBIS__
-            dump_buffer = lmalloc(resolution.x * resolution.y * sizeof(int));
+            dump_buffer = malloc(resolution.x * resolution.y * sizeof(int));
 #else
             dump_buffer = calloc(resolution.x * resolution.y, sizeof(int));
 #endif

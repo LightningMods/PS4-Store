@@ -381,9 +381,9 @@ void InitScene_5(int width, int height)
     }
     
 
-    // we will need at max i_apps count coverbox
+    // we will need at max all_apps count coverbox
     if(!cf_tex)
-        cf_tex = calloc(i_apps->token_c +1 /* 1st is reseved */, sizeof(retry_t));
+        cf_tex = calloc(all_apps->token_c /* 1st is reseved */+ 1, sizeof(retry_t));
 
     // all done
 }
@@ -457,7 +457,7 @@ bool use_reflection  = true,
      use_pixelshader = true;
 
 extern layout_t *icon_panel;
-extern item_t   *i_apps;
+extern item_t   *all_apps;
 extern ivec4     menu_pos;
 
 
@@ -466,20 +466,20 @@ static bool reset_tex_slot(int idx)
     bool res = false;
     if(cf_tex[ idx ].tex > 0)
     {
-//      log_debug( "%s[%3d]: %3d, %3d", __FUNCTION__, idx, cf_tex[ idx ].tex, i_apps[ idx ].texture);
+//      log_debug( "%s[%3d]: %3d, %3d", __FUNCTION__, idx, cf_tex[ idx ].tex, all_apps[ idx ].texture);
         if(cf_tex[ idx ].tex != cb_tex) // keep the coverbox template
         {
-//          log_debug( "%s[%3d]: (%d)  %d ", __FUNCTION__, idx, cf_tex[ idx ].tex, i_apps[ idx ].texture);
+//          log_debug( "%s[%3d]: (%d)  %d ", __FUNCTION__, idx, cf_tex[ idx ].tex, all_apps[ idx ].texture);
             glDeleteTextures(1, &cf_tex[ idx ].tex), cf_tex[ idx ].tex = 0;
             res = true;
         }
         else
         {
-            if(i_apps[ idx ].texture  > 0
-            && i_apps[ idx ].texture != fallback_t) // keep icon0 template
+            if(all_apps[ idx ].texture  > 0
+            && all_apps[ idx ].texture != fallback_t) // keep icon0 template
             {   // discard icon0.png
-//              log_debug( "%s[%3d]:  %d  (%d)", __FUNCTION__, idx, cf_tex[ idx ].tex, i_apps[ idx ].texture);
-                glDeleteTextures(1, &i_apps[ idx ].texture), i_apps[ idx ].texture = 0;
+//              log_debug( "%s[%3d]:  %d  (%d)", __FUNCTION__, idx, cf_tex[ idx ].tex, all_apps[ idx ].texture);
+                glDeleteTextures(1, &all_apps[ idx ].texture), all_apps[ idx ].texture = 0;
                 res = true;
             }
         }
@@ -493,7 +493,7 @@ void drop_some_coverbox(void)
 {
     int count = 0;
 
-    for (int i = 0; i < i_apps->token_c; i++)
+    for (int i = 1; i < all_apps->token_c + 1; i++)
     {
         if(i > g_idx - pm_r -1
         && i < g_idx + pm_r +1) continue;
@@ -506,17 +506,31 @@ void drop_some_coverbox(void)
 }
 
 
+ void check_tex_for_reload(int idx) {
+
+    char* id = all_apps[idx].token_d[ID].off,
+        cb_path[256];
+
+    snprintf(cb_path, 255, "/user/app/NPXS39041/covers/%s.png", id);
+
+    if (!if_exists(cb_path)) // download
+    {
+        cf_tex[idx].exists = false;
+
+    }
+    else
+        cf_tex[idx].exists = true;
+
+}
+
 static void download_texture(int idx)
 {
     if (!cf_tex[idx].tex)
     {
-        char* id = i_apps[idx].token_d[ID].off,
+        char* id = all_apps[idx].token_d[ID].off,
             cb_path[256];
 
         snprintf(cb_path, 255, "/user/app/NPXS39041/covers/%s.png", id);
-
-        mkdir("/user/app/NPXS39041/covers", 0777);
-        //DONT CARE IF IT ALREADY EXISTS
         log_info("Trying to Download cover for %s", id);
 
         loadmsg("Trying to Download cover for %s", id);
@@ -545,44 +559,44 @@ static void download_texture(int idx)
     }
 }
 
-static void check_n_load_texture(int idx)
+void check_n_load_textures(int idx)
 {
     if( ! cf_tex[ idx ].tex )
     {
-        char *id = i_apps[ idx ].token_d[ ID ].off,
+        char *id = all_apps[ idx ].token_d[ ID ].off,
               cb_path[256];
 
         snprintf(cb_path, 255, "/user/app/NPXS39041/covers/%s.png", id);
 
         cf_tex[idx].tex = cb_tex;
 
-        if(cf_tex[idx].exists)
-           cf_tex[ idx ].tex = load_png_asset_into_texture(cb_path);
-        
+        if (cf_tex[idx].exists)
+            cf_tex[idx].tex = load_png_asset_into_texture(cb_path);
     }
-    // as final fallback
-    if( cf_tex[ idx ].tex == 0 ) cf_tex[ idx ].tex = cb_tex;
+    if( cf_tex[ idx ].tex == 0 ) cf_tex[ idx ].tex = cb_tex; // as final fallback
 }
 
 
-static void check_n_draw_texture(int idx, int SH_type, vec4 col)
+static void check_n_draw_textures(int idx, int SH_type, vec4 col)
 {
+  
     if( cf_tex[ idx ].tex == cb_tex ) // craft a coverbox stretching the icon0
     {
+        
         render_tex( cb_tex, /* template */ SH_type, cover_t, col );
 
-        if( i_apps[ idx ].texture == 0 )
-            i_apps[ idx ].texture = load_png_asset_into_texture( i_apps[ idx ].token_d[ PICPATH ].off );
-        // fallback icon0
-        if( i_apps[ idx ].texture == 0 )
-            i_apps[ idx ].texture = fallback_t;
+        if(all_apps[idx].texture == NULL)
+            all_apps[ idx ].texture = load_png_asset_into_texture( all_apps[ idx ].token_d[ PICPATH ].off );
+
+        if(all_apps[idx].texture == NULL)
+            all_apps[idx].texture = fallback_t; // fallback icon0
+     
         // overlayed stretched icon0
-        render_tex( i_apps[ idx ].texture, SH_type, cover_i, col );
+        render_tex( all_apps[ idx ].texture, SH_type, cover_i, col );
     }
     else // available cover box texture
-    {
-        render_tex( cf_tex[ idx ].tex, SH_type, cover_t, col );
-    }
+       render_tex( cf_tex[ idx ].tex, SH_type, cover_t, col );
+    
 }
 
 
@@ -616,9 +630,9 @@ static void send_cf_action(int plus_or_minus_one, int type)
     xoff   = plus_or_minus_one * off.x; // set total x offset with sign!
 
     log_info("%d, %s, %s, %d", g_idx,
-                           i_apps[ g_idx ].token_d[ NAME ].off,
-                           i_apps[ g_idx ].token_d[ ID   ].off,
-                           i_apps[ g_idx ].texture);
+                           all_apps[ g_idx ].token_d[ NAME ].off,
+                           all_apps[ g_idx ].token_d[ ID   ].off,
+                           all_apps[ g_idx ].texture);
 }
 
 typedef enum view_t
@@ -674,10 +688,6 @@ layout_t *gm_p = NULL, // game_option_panel
 extern char* title[300];
 extern char* title_id[30];
 
-bool IS_ERROR(uint32_t a1)
-{
-    return a1 & 0x80000000;
-}
 
 static void X_action_dispatch(int action, layout_t *l)
 {
@@ -687,11 +697,11 @@ static void X_action_dispatch(int action, layout_t *l)
     // selected item from active panel
     log_info( "execute %d -> '%s' for '%s'", l->curr_item, 
                                         l->item_d[ l->curr_item ].token_d[    0 ].off,
-                                           i_apps[ g_idx        ].token_d[ NAME ].off);
+                                           all_apps[ g_idx        ].token_d[ NAME ].off);
 
     
-    snprintf(title,   400, "%s", i_apps[ g_idx ].token_d[ NAME ].off);
-    snprintf(title_id, 30, "%s", i_apps[ g_idx ].token_d[ ID   ].off);
+    snprintf(title,   400, "%s", all_apps[ g_idx ].token_d[ NAME ].off);
+    snprintf(title_id, 30, "%s", all_apps[ g_idx ].token_d[ ID   ].off);
 
     log_info("title_id: %s, title: %s",title_id, title);
 
@@ -699,89 +709,20 @@ static void X_action_dispatch(int action, layout_t *l)
     {
         case Dump_Game_opt:
         {
-            dump = true;
+            
+            if (strstr(usbpath(), "/mnt/usb") == NULL)
+            {
+                msgok(WARNING, "No USB Detected, Exiting...");
+                break;
+            }
+            else
+                dump = true;
+
 
             msgok(NORMAL, "AFTER the Game launches when you press OK wait few seconds then go back to the Store\n\nand the game will be begin dumping DO NOT CLOSE THE GAME OR STORE UNTIL THE DUMP IS COMPLETE");
         }
-        case Launch_Game_opt:
-        {
-            libcmi = sceKernelLoadStartModule("/system/common/lib/libSceSystemService.sprx", 0, NULL, 0, 0, 0);
-            if (libcmi > 0)
-            {
-                log_info("Starting action Launch_Game_opt");
-
-
-                OrbisUserServiceLoginUserIdList userIdList;
-
-                log_info("ret %x", sceUserServiceGetLoginUserIdList(&userIdList));
-
-                for (int i = 0; i < 4; i++)
-                {
-                    if (userIdList.userId[i] != 0xFF)
-                    {
-                        log_info("[%i] User ID 0x%x", i, userIdList.userId[i]);
-                    }
-                }
-
-
-                LncAppParam param;
-                param.sz = sizeof(LncAppParam);
-
-                if(userIdList.userId[0] != 0xFF)
-                     param.user_id = userIdList.userId[0];
-                else if (userIdList.userId[1] != 0xFF)
-                    param.user_id = userIdList.userId[1];
-
-                param.app_opt = 0;
-                param.crash_report = 0;
-                param.check_flag = SkipSystemUpdateCheck;
-
-                log_info( "l1 %x", sceLncUtilInitialize());
-
-
-                uint32_t sys_res = sceLncUtilLaunchApp(title_id, 0, &param);
-                if (IS_ERROR(sys_res))
-                {
-                    log_info("Switch 0x%x", sys_res);
-                    switch (sys_res) {
-                       case SCE_LNC_ERROR_APP_NOT_FOUND: {
-                        msgok(WARNING, "App is NOT Found ref: SCE_LNC_ERROR_APP_NOT_FOUND");
-                        break;
-                      }
-                      case SCE_LNC_UTIL_ERROR_ALREADY_RUNNING: {
-                        msgok(WARNING, "App is already running ref: SCE_LNC_UTIL_ERROR_ALREADY_RUNNING");
-                        break;
-                      }
-                      case SCE_LNC_UTIL_ERROR_ALREADY_RUNNING_KILL_NEEDED: {
-                        log_debug("ALREADY RUNNING KILL NEEDED");
-                        break;
-                      }
-                      case SCE_LNC_UTIL_ERROR_ALREADY_RUNNING_SUSPEND_NEEDED: {
-                        log_debug("ALREADY RUNNING SUSPEND NEEDED");
-                        break;
-                      }
-                      case SCE_LNC_UTIL_ERROR_SETUP_FS_SANDBOX: {
-                        msgok(WARNING, "App is NOT Launchable ref: SCE_LNC_UTIL_ERROR_SETUP_FS_SANDBOX");
-                        break;
-                      }
-                      case SCE_LNC_UTIL_ERROR_INVALID_TITLE_ID: {
-                        msgok(WARNING, "TITLE_ID IS NOT VAILED ref: SCE_LNC_UTIL_ERROR_SETUP_FS_SANDBOX");
-                        break;
-                      }
-
-                      default:{
-                        msgok(WARNING, "App Launch has failed with error code: 0x%x", sys_res);
-                        break;
-                       }
-                    }
-                }
-
-                log_info("launch ret 0x%x", sys_res);
-
-            }
-            else
-                msgok(WARNING, "Game Launch has failed with 0x%X", libcmi);
-
+        case Launch_Game_opt: {
+            Launch_App(title_id, false);
             break;
         }
         case Uninstall_Update_opt: {
@@ -799,8 +740,8 @@ static void X_action_dispatch(int action, layout_t *l)
             {
                 msgok(NORMAL, "Game Uninstalled successfully, the installed App list will now reload");
 
+                fw_action_to_cf(0x1337);
                 refresh_apps_for_cf();
-                fw_action_to_cf(CIR);
             }
             else
                 msgok(WARNING, "Game Uninstall failed with code: %x (%i)", error, error);
@@ -843,7 +784,6 @@ void fw_action_to_cf(int button)
             case TRI: {  //REFRESH APP
                 //tell the user
                 msgok(NORMAL, "The Installed Apps list will now Reload");
-                //refresh app list
                 refresh_apps_for_cf(); 
                 //go back to main menu
                 goto refresh_apps;
@@ -877,7 +817,20 @@ refresh_apps:
             case CIR: v2 = set_view(ITEMzFLOW); break;
             
 
-            case TRI:  break;//goto back_to_Store;
+            case TRI: {  
+                break;//goto back_to_Store;
+            }
+
+            case 0x1337: {
+                log_info("called 0x1337");
+                v2 = set_view(ITEMzFLOW);
+                drop_some_coverbox();
+                menu_pos.z = ON_MAIN_SCREEN;
+                active_p = icon_panel;
+                if (active_p->vbo_s < ASK_REFRESH) active_p->vbo_s = ASK_REFRESH;
+                break;
+            }
+
         }
     }
 }
@@ -946,8 +899,8 @@ void DrawScene_4(void)
             {   // ani ended, move global index by sign!
                 g_idx += (xoff > 0) ? 1 : -1; // L:-1, R:+1
                 // bounds checking on item count
-                if(g_idx < 1) g_idx = i_apps[0].token_c;
-                if(g_idx > i_apps[0].token_c) g_idx = 1;
+                if(g_idx < 1) g_idx = all_apps[0].token_c;
+                if(g_idx > all_apps[0].token_c) g_idx = 1;
             }
 
             if(ani->handle == &v_curr)
@@ -1015,15 +968,16 @@ void DrawScene_4(void)
         vec3 pos, rot;
 
 draw_item:
-
+        
         // next item position
         pos    = j * offset;
+        
         // set -DEFAULT_Z_CAMERA
         pos.z -= testoff; // adjust testoff
-
+        
         rot    = (vec3) { gx, 90. / (float)pm_r, 0. };
         rot   *= -j;
-
+        
       //if(pr_dbg)
         if(0)
         {
@@ -1035,22 +989,22 @@ draw_item:
 
         if( !j ) // means the selected, last one
         {
+            
             colo = (1.);
             if( !xoff ) rot.y = ani_ratio * 360; // coverbox backflip effect
+            
         }
 
         // adjust on l/r action
-        if(xoff > 0)
-        {
+        if (xoff > 0) {
             pos -= ani_p;  rot += ani_r; // right
         }
-        else
-        if(xoff < 0)
-        {
+        else if (xoff < 0) {
             pos += ani_p;  rot -= ani_r; // left
         }
+        
 
-        // ...
+        // ... 
 
         glUseProgram( sh_prog1 );
         glEnable ( GL_BLEND );
@@ -1083,43 +1037,50 @@ draw_item:
             }
             vertex_buffer_render( cover_o, GL_TRIANGLES );
         }
-
-        /* index texture from i_apps array */
+        
+        /* index texture from all_apps array */
         int tex_idx = g_idx + j;
+        
         // check bounds: skip first
         if( tex_idx  < 1)
-            tex_idx += i_apps[0].token_c;
+            tex_idx += all_apps[0].token_c;
         else
-        if( tex_idx  > i_apps[0].token_c)
-            tex_idx -= i_apps[0].token_c;
+        if( tex_idx  > all_apps[0].token_c)
+            tex_idx -= all_apps[0].token_c;
+        
 
+        if (all_apps[0].token_c < 4) msgok(FATAL, "This Game Launcher has a Requirement of min. 4 Apps\nTo use it you need to install: %i More apps\n", 4 - all_apps[0].token_c);
 
-        if (i_apps[0].token_c < 4) msgok(FATAL, "This Game Launcher has a Requirement of min. 4 Apps\nTo use it you need to install: %i More apps\n", i_apps[0].token_c - 4);
-
+        
         if (Download_icons)
         { 
             loadmsg("Downloading Covers from the server");
-
-            for (int i = 1; i <= i_apps[0].token_c; i++)
+            
+           for (int i = 1; i < all_apps[0].token_c + 1; i++)
                 download_texture(i);
 
             Download_icons = false;
             sceMsgDialogTerminate();
-            log_info("i_apps[0].token_c: %i", i_apps[0].token_c);
+            log_info("all_apps[0].token_c: %i", all_apps[0].token_c);
         }
+        
         // load textures (once)
-        check_n_load_texture(tex_idx);
+        check_n_load_textures(tex_idx);
+        
         // draw coverbox, if not avail craft coverbox from icon
-        check_n_draw_texture( tex_idx, +1, colo );
-
+        check_n_draw_textures( tex_idx, +1, colo );
+        
+        
 
     // reflection option
     if(use_reflection)
     {   /* reflect on the Y, actual position matters! */
         mat4_scale( &model, 1, -1, 1 );
 
+        
         // draw coverbox reflection, if not avail craft coverbox from icon
-        check_n_draw_texture( tex_idx, -1, colo );
+        check_n_draw_textures( tex_idx, -1, colo );
+        
     }
         /* set title */
         if(! j           // last drawn one, the selected in the center
@@ -1129,16 +1090,28 @@ draw_item:
 
             //       vec2 pen = (vec2){ (float)l->bound_box.x - 20., resolution.y - 140. };
 
-            item_t *li = &i_apps[ tex_idx ];
+            item_t *li = &all_apps[ tex_idx ];
 
             title_vbo  = vertex_buffer_new( "vertex:3f,tex_coord:2f,color:4f" );
-    // NAME, is size checked
+            // NAME, is size checked
             size_t len = strlen(li->token_d[NAME].off);
-            if(len < 30)
-                strcpy(&tmp[0], li->token_d[NAME].off);
+            if (len < 30)
+            {
+                if (tex_idx <= HDD_count)
+                    strcpy(&tmp[0], li->token_d[NAME].off);
+                else
+                    snprintf(&tmp[0], 127, "%s (Ext. HDD)", li->token_d[NAME].off);
+            }
             else
-                snprintf(&tmp[0], 127, "%.26s..." , li->token_d[NAME].off);
+            {
+                if (tex_idx <= HDD_count)
+                   snprintf(&tmp[0], 127, "%.26s...", li->token_d[NAME].off);
+                else
+                    snprintf(&tmp[0], 127, "%.26s... (Ext. HDD)", li->token_d[NAME].off);
 
+            }
+
+            
             // we need to know Text_Length_in_px in advance, so we call this:
             texture_font_load_glyphs( titl_font, &tmp[0] );
 
@@ -1146,12 +1119,12 @@ draw_item:
             vec2 pen = (vec2) { (resolution.x - tl) /2., (resolution.y /10.) *2. };
             //Game Options Pen
             vec2 pen_game_options = (vec2){ 100., resolution.y - 150. };
-
+            
             if (v_curr == ITEM_PAGE)
               add_text( title_vbo, titl_font, &tmp[0], &col, &pen_game_options);
             else // fill the vbo
               add_text( title_vbo, titl_font, &tmp[0], &col, &pen);
-                          
+            
             // ID
             // we need to know Text_Length_in_px in advance, so we call this:
             texture_font_load_glyphs( sub_font, li->token_d[ID].off);
@@ -1171,7 +1144,7 @@ draw_item:
               else // fill the vbo
                   add_text( title_vbo, sub_font, li->token_d[ID].off, &c, &pen);
                  
-            
+              
             // we eventually added glyphs... (todo: glyph cache)
             refresh_atlas();
         }
@@ -1180,7 +1153,7 @@ draw_item:
 
         // count: index is outer (+R, -L) to inner!
         c += 1;
-
+        
         // flip sign, get mirrored
         if(j > 0) { j *= -1; goto draw_item; }
 
@@ -1201,8 +1174,8 @@ all_drawn:
             if(pr_dbg)
             {
                 log_info("%d,\t%s\t%s", g_idx,
-                                i_apps[ g_idx ].token_d[ NAME ].off,
-                                i_apps[ g_idx ].token_d[ ID   ].off);
+                                all_apps[ g_idx ].token_d[ NAME ].off,
+                                all_apps[ g_idx ].token_d[ ID   ].off);
             }
             draw_additions();
             // texts out of VBO

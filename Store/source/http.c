@@ -8,6 +8,7 @@
 
 #include "defines.h"
 #include "Header.h"
+#include <user_mem.h> 
 
 struct dl_args {
     const char *src,
@@ -40,7 +41,7 @@ void DL_ERROR(const char* name, int statusCode, struct dl_args *i)
     if (!i->is_threaded) 
         log_warn( "Download Failed with code HEX: %x Int: %i from Function %s src: %s", statusCode, statusCode, name, i->src);
     else 
-        msgok(WARNING, "Download Failed with codeHEX: %x Int: %ifrom Function %s src: %s", statusCode, statusCode, name, i->src);
+        msgok(WARNING, "Download Failed with code\n\nHEX: %x Int: %i\nfrom Function %s src: %s", statusCode, statusCode, name, i->src);
        
     
 }
@@ -83,15 +84,22 @@ int ini_dl_req(struct dl_args *i)
     {
         if(statusCode == 404)
         {
-            if(i->is_threaded)
-                    DL_ERROR("sceHttpGetStatusCode()", statusCode, i);
-            else
+            if (i->is_threaded) {
+                DL_ERROR("sceHttpGetStatusCode()", statusCode, i);
+                goto error;
+            }
+            else {
+                DL_ERROR("sceHttpGetStatusCode()", statusCode, i);
                 goto error; //fail silently (its for JSON Func)
+            }
 
         }
         else
-           DL_ERROR("sceHttpGetStatusCode()", statusCode, i);
-        goto error;
+          DL_ERROR("sceHttpGetStatusCode()", statusCode, i);
+
+
+     goto error;
+        
     }
 
     log_info( "[%s:%i] ----- statusCode: %i ---", __FUNCTION__, __LINE__, statusCode);
@@ -115,6 +123,24 @@ int ini_dl_req(struct dl_args *i)
 
 error:
     log_error( "%s error: %d, 0x%x", __FUNCTION__, statusCode, statusCode);
+    if (i->req > 0) {
+        ret = sceHttpDeleteRequest(i->req);
+        if (ret < 0) {
+            log_info("sceHttpDeleteRequest() error: 0x%08X\n", ret);
+        }
+    }
+    if (i->connid > 0) {
+        ret = sceHttpDeleteConnection(i->connid);
+        if (ret < 0) {
+            log_info("sceHttpDeleteConnection() error: 0x%08X\n", ret);
+        }
+    }
+    if (i->tmpid > 0) {
+        ret = sceHttpDeleteTemplate(i->tmpid);
+        if (ret < 0) {
+            log_info("sceHttpDeleteTemplate() error: 0x%08X\n", ret);
+        }
+    }
 
     // failsafe
     if(statusCode < 1) statusCode = 0x1337;
@@ -128,6 +154,7 @@ void *start_routine(void *argument)
     struct dl_args *i = (struct dl_args*) argument;
 
     int ret = -1;
+    int total_read = 0;
     log_error( "i->dst %s", i->dst);
     log_error( "i->url %s", i->src);
     log_error( "i->req %x", i->req);
@@ -137,23 +164,20 @@ void *start_routine(void *argument)
     unlink(i->dst);
 
     int fd = sceKernelOpen(i->dst, O_WRONLY | O_CREAT, 0777);
-    // fchmod(fd, 777);
-    int total_read = 0;
-    if(fd < 0) return (void*)fd;
+    log_debug("fd %i", fd);
+    if(fd < 0) 
+        goto cleanup;
 
     while (1)
     {
         int read = sceHttpReadData(i->req, buf, sizeof(buf));
-        if (read <  0) return (void*)read;
+        if (read < 0) { ret = (void*)read;  goto cleanup; }
         if (read == 0) break;
 
         ret = sceKernelWrite(fd, buf, read);
         if(ret < 0 || ret != read)
-        {
-            if(ret < 0) return (void*)ret;
-
-            return -1;
-        }
+           goto cleanup;
+        
         total_read += read;
 
         int prog = (uint32_t)(((float)total_read / i->contentLength) * 100.f);
@@ -162,18 +186,34 @@ void *start_routine(void *argument)
             prog = 100; break;//runn = 0; // stop
         }
     }
-    ret = sceKernelClose(fd);
 
 cleanup:
-    if(i->req)
-       sceHttpDeleteRequest(i->req);
-    if(i->connid)
-       sceHttpDeleteConnection(i->connid);
-    if(i->tmpid)
-       sceHttpDeleteTemplate(i->tmpid);
+    if (i->req > 0) {
+        ret = sceHttpDeleteRequest(i->req);
+        if (ret < 0) {
+            log_error("sceHttpDeleteRequest(%i) error: 0x%08X\n", i->req, ret);
+        }
+    }
+    if (i->connid > 0) {
+        ret = sceHttpDeleteConnection(i->connid);
+        if (ret < 0) {
+            log_error("sceHttpDeleteConnection(%i) error: 0x%08X\n", i->connid, ret);
+        }
+    }
+    if (i->tmpid > 0) {
+        ret = sceHttpDeleteTemplate(i->tmpid);
+        if (ret < 0) {
+            log_error("sceHttpDeleteTemplate(%i) error: 0x%08X\n", i->tmpid, ret);
+        }
+    }
+    if (fd > 0) {
+        ret = sceKernelClose(fd);
+        if (ret < 0) {
+            log_error("sceKernelClose(%i) error: 0x%08X\n", fd, ret);
+        }
+    }
 
     // leave httpCtx, sslCtx, NetMemId valids to be reused !
-
     return (void*)ret;
 }
 
@@ -274,7 +314,7 @@ char *check_from_url(const char *url_, enum CHECK_OPTS opt)
         while (1)
         {   
             int read = sceHttpReadData(dl_args.req, JSON, sizeof(JSON));
-            if (read <  0) return NULL;
+            if (read < 0) return NULL;
             if (read == 0) break;
 
             total_read += read;
