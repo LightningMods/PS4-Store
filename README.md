@@ -10,10 +10,10 @@
 
 ## Store directions
 
-** Please note that the Store app updates automatically via internet without any action by the user**
+**Please note that the Store app updates automatically via internet without any action by the user**
 
 - the ELFs in the release section are ONLY for CDNs or for locally hosting a Store Server
-- You can download The [Package here (PKG-Zone)](https://pkg-zone.com/Store-R2.pkg), ** ONLY Download from this Site **
+- You can download The [Package here (PKG-Zone)](https://pkg-zone.com/Store-R2.pkg), **ONLY Download from this Site**
 - You can always change App settings without opening the app by adding a settings.ini file to the root of a USB
 
 ## Libaries
