@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include "defines.h"
+#include "shaders.h"
 
 // ft-gl: main, from demo-font.c
 extern GLuint shader;
@@ -152,7 +153,7 @@ void GLES2_fonts_from_ttf(const char *path)
 
         if( ! ttf )
         {
-            msgok(NORMAL,"TTF Failed Loading from %s Switching to Embedded", path); goto default_embedded;
+            msgok(NORMAL,"%s %s %s", getLangSTR(FAILED_TTF), path, getLangSTR(SWITCH_TO_EM)); goto default_embedded;
         }
 
     } else {
@@ -160,7 +161,7 @@ void GLES2_fonts_from_ttf(const char *path)
 default_embedded: // fallback on error
 
         ttf  = &font_ttf[0];
-        size =  font_ttf_len;
+        size =  font_len;
     }
     // recreate global glyph atlas
     ftgl_purge_fonts();
@@ -169,8 +170,8 @@ default_embedded: // fallback on error
     if( ! ftgl_init_fonts( ttf, size ) )
     {   // custom data failed...
         char tmp[256];
-        snprintf(&tmp[0], 255, "%s failed to create font from %s", __FUNCTION__, path);
-
+        snprintf(&tmp[0], 255, "%s %s %s", __FUNCTION__, getLangSTR(CANT_OPEN),path);
+        msgok(WARNING, tmp);
         sceKernelIccSetBuzzer(3);
         // go back and fallback to default font
         goto default_embedded;
@@ -183,8 +184,8 @@ default_embedded: // fallback on error
 void GLES2_init_submenu( void )
 {
     // load fonts once, don't delete them, but reuse!
-    titl_font = texture_font_new_from_memory(atlas, 32, font_ttf, font_ttf_len);
-     sub_font = texture_font_new_from_memory(atlas, 25, font_ttf, font_ttf_len);
-    main_font = texture_font_new_from_memory(atlas, 18, font_ttf, font_ttf_len);
+    titl_font = texture_font_new_from_memory(atlas, 32, font_ttf, font_len);
+     sub_font = texture_font_new_from_memory(atlas, 25, font_ttf, font_len);
+    main_font = texture_font_new_from_memory(atlas, 18, font_ttf, font_len);
 }
 

@@ -7,94 +7,11 @@
 */
 
 #include "defines.h"
+#include "shaders.h"
 
 /* glsl programs */
 static GLuint glsl_Program[NUM_OF_PROGRAMS];
 static GLuint curr_Program;  // the current one
-
-/* simple shaders */
-static const char *vs[NUM_OF_PROGRAMS] =
-{
-    "precision mediump float;"
-    "attribute vec4    a_Position;"
-    "uniform   vec4    u_color;"
-    "uniform   float   u_time;"
-    // use your own output instead of gl_FrontColor
-    "varying   vec4 fragColor;"
-    ""
-    "void main(void)"
-    "{"
-    "  fragColor    = u_color;"
-    "  gl_Position  = a_Position;"
-    "} "
-    ,
-    /// 2. USE_UTIME
-    "precision mediump float;"
-    "attribute vec4    a_Position;"
-    "uniform   vec4    u_color;"
-    "uniform   float   u_time;"
-    // use your own output instead of gl_FrontColor
-    "varying   vec4 fragColor;"
-    ""
-    "void main(void)"
-    "{"
-    "  fragColor    = u_color;"
-    "  gl_Position  = a_Position;"
-    // apply a little of zooming
-//    "  gl_Position.w -= ( abs(sin(u_time)) * .006 );"
-    "} "
-    ,
-    /// 3. 
-    "precision mediump float;"
-    "attribute vec4    a_Position;"
-    "uniform   vec4    u_color;"
-    "uniform   float   u_time;"
-    // use your own output instead of gl_FrontColor
-    "varying   vec4 fragColor;"
-    ""
-    "void main(void)"
-    "{"
-    "  fragColor    = u_color;"
-    "  gl_Position  = a_Position;"
-    // apply a little of zooming
-    "  gl_Position.w -= ( abs(sin(u_time)) * .01 );"
-    "} "
-} ;
-
-static const char *fs[NUM_OF_PROGRAMS] =
-{
-/// 1. use passed u_color
-    "precision mediump float;"
-    "varying   vec4    fragColor;"
-    "uniform   float   u_time;"
-    ""
-    "void main(void)"
-    "{"
-    "  gl_FragColor    = fragColor;"
-     "} "
-    ,
-    /// 2. USE_UTIME
-    "precision mediump float;"
-    "varying   vec4    fragColor;"
-    "uniform   float   u_time;"
-    ""
-    "void main(void)"
-    "{"
-    "  gl_FragColor    = fragColor;"
-    "  gl_FragColor.a *= abs(sin(u_time));"
-    "} "
-    ,
-    /// 3. 
-    "precision mediump float;"
-    "varying   vec4    fragColor;"
-    "uniform   float   u_time;"
-    ""
-    "void main(void)"
-    "{"
-    "  gl_FragColor    = fragColor;"
-    "  gl_FragColor.a *= abs(sin(u_time));"
-    "} "
-} ;
 
 extern vec2   resolution;
 static vec4   color = { 1., 0., .5, 1. }; // current RGBA color
@@ -122,28 +39,35 @@ void on_GLES2_Update1(double time)
 
 }
 
-void ORBIS_RenderFillRects_init( int width, int height )
+/*================= RECT SHADERS  =================================*/
+
+
+void ORBIS_RenderFillRects_init(int width, int height)
 {
     resolution = (vec2){ width, height };
 
-    for(int i = 0; i < NUM_OF_PROGRAMS; ++i)
-    {
-        glsl_Program[i] = BuildProgram(vs[i], fs[i]);
+    curr_Program = glsl_Program[0] = BuildProgram(rects_vs0, rects_fs0, rects_vs0_length, rects_fs0_length);
+    curr_Program = glsl_Program[1] = BuildProgram(rects_vs1, rects_fs1, rects_vs1_length, rects_fs1_length);
+    curr_Program = glsl_Program[2] = BuildProgram(rects_vs2, rects_fs2, rects_vs2_length, rects_fs2_length);
 
+    for (int i = 0; i < NUM_OF_PROGRAMS; i++)
+    {
         curr_Program = glsl_Program[i];
 
         glUseProgram(curr_Program);
         // gles2 attach shader locations
-        a_position_location = glGetAttribLocation (curr_Program, "a_Position");
-        u_color_location    = glGetUniformLocation(curr_Program, "u_color");
-        u_time_location     = glGetUniformLocation(curr_Program, "u_time");
+        a_position_location = glGetAttribLocation(curr_Program, "a_Position");
+        u_color_location = glGetUniformLocation(curr_Program, "u_color");
+        u_time_location = glGetUniformLocation(curr_Program, "u_time");
     }
+    
     curr_Program = glsl_Program[0];
     // select for setup
     glUseProgram(curr_Program);
     // reshape
     glViewport(0, 0, width, height);
 }
+/* ================================= =========================*/
 
 
 void ORBIS_RenderFillRects_fini(void)

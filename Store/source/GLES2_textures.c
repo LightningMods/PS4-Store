@@ -10,9 +10,8 @@
 #include <math.h>
 
 #include "defines.h"
-
+#include "shaders.h"
 #include "json.h"
-#include "icons_shaders.h"
 
 /*
     we setup two SL programs:
@@ -61,27 +60,25 @@ static void setup_texture_position(int i, vec2 pos, const float scale_f)
 }
 #endif
 
+/*================= ICON SHADERS  =================================*/
+
+
 void on_GLES2_Init_icons(int view_w, int view_h)
 {
     resolution = (vec2){ view_w, view_h };
 
+    glsl_Program[0] = BuildProgram(icons_vs0, icons_fs0, icons_vs0_length, icons_fs0_length);
+    glsl_Program[1] = BuildProgram(icons_vs1, icons_fs1, icons_vs1_length, icons_fs1_length);
+    glsl_Program[2] = BuildProgram(icons_vs2, icons_fs2, icons_vs2_length, icons_fs2_length);
+
+
     for(int i = 0; i < MAX_SL_PROGRAMS; i++)
     {
-        glsl_Program[i] =
-        #if 1 // defined HAVE_SHACC
-            BuildProgram(simpleVertexShader[i], simpleFragmentShader[i]);
-        #else
-            CreateProgramFromBinary(i);
-        #endif
-
-        log_debug( "%s: glsl_Program[%d]: %u", __FUNCTION__, i, glsl_Program[i]);
-
+        log_debug("%s: glsl_Program[%d]: %u", __FUNCTION__, i, glsl_Program[i]);
+        
         if( ! glsl_Program[i] )
-        {
             log_error( "error for program[%d]!", i);
-
-            log_error( "%s%s", simpleVertexShader[i], simpleFragmentShader[i]);
-        }
+        
         // make program the current one
         curr_Program = glsl_Program[i];
 

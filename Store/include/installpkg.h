@@ -69,6 +69,43 @@ struct bgft_init_params {
     size_t heapSize;
 };
 
+typedef struct install_args {
+    char* title_id; int* task_id; unsigned long size; char* path;  bool is_thread; void* bgft_heap;
+}install_args;
+
+struct bgft_download_task_progress_info {
+    unsigned int bits;
+    int error_result;
+    unsigned long length;
+    unsigned long transferred;
+    unsigned long length_total;
+    unsigned long transferred_total;
+    unsigned int num_index;
+    unsigned int num_total;
+    unsigned int rest_sec;
+    unsigned int rest_sec_total;
+    int preparing_percent;
+    int local_copy_percent;
+};
+
+struct _SceBgftTaskProgress {
+    unsigned int bits;
+    int errorResult;
+    unsigned long length;
+    unsigned long transferred;
+    unsigned long lengthTotal;
+    unsigned long transferredTotal;
+    unsigned int numIndex;
+    unsigned int numTotal;
+    unsigned int restSec;
+    unsigned int restSecTotal;
+    int preparingPercent;
+    int localCopyPercent;
+};
+typedef struct _SceBgftTaskProgress SceBgftTaskProgress;
+
+bool app_inst_util_is_exists(const char* title_id, bool* exists);
+
 
 int sceAppInstUtilInitialize(void);
 int sceAppInstUtilAppInstallPkg(const char* file_path, int reserved);

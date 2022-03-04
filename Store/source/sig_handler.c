@@ -7,9 +7,9 @@
 #include <unistd.h>  // close
 #include <sys/signal.h>
 #include <errno.h>
-#include <sig_handler.h>
 #include <utils.h>
 #include <sys/mount.h>
+#include <dumper.h>
 
 #if 0
 //defined (__ORBIS__)
@@ -19,10 +19,10 @@
 #include <orbislink.h>
 #include <libkernel.h>
 #include <sys/mman.h>
-#include <ImeDialog.h>
+
 #include <utils.h>
-#include <MsgDialog.h>
-#include <CommonDialog.h>
+
+#include <dialog.h>
 #include <dump_and_decrypt.h>
 
 #define  fprintf  debugNetPrintf
@@ -33,104 +33,13 @@
 
 #endif
 
-
-// the Settings
 extern StoreOptions set,
-                   *get;
+* get;
 
-char* title[300]; 
+char* title[300];
 char* title_id[30];
 
-
-int copyFileProgForDump(char* sourcefile, char* destfile, int total_dumped, int total_files, char* tid, char* app_name)
-{
-    long tot = CalcAppsize(sourcefile);
-    char buf[1024];
-    int src = sceKernelOpen(sourcefile, O_RDONLY, 0);
-    if (src > 0)
-    {
-
-        int out = sceKernelOpen(destfile, O_WRONLY | O_CREAT | O_TRUNC, 0777);
-        if (out > 0)
-        {
-            size_t bytes;
-            char* buffer = malloc(65536);
-            if (buffer != NULL)
-            {
-                while (0 < (bytes = sceKernelRead(src, buffer, 65536)))
-                {
-                    uint32_t g_progress = (uint32_t)(((float)bytes / tot) * 100.f);
-
-                    snprintf(buf, 1023, "Dump Info:\n\nTitle_ID: %s\nApp name: %s\nDumping File... %s to %s\n\n File %i / %i\n", tid, app_name, sourcefile, destfile, total_dumped, total_files);
-
-                    sceMsgDialogProgressBarSetValue(0, g_progress);
-
-                    sceMsgDialogProgressBarSetMsg(0, buf);
-
-                    sceKernelWrite(out, buffer, bytes);
-                }
-                free(buffer);
-            }
-            else
-            {
-                sceKernelClose(src);
-                sceKernelClose(out);
-                return -1;
-            }
-
-            sceKernelClose(src);
-            sceKernelClose(out);
-            log_info("Copying was Successfully");
-            return 0;
-        }
-        else
-        {
-            sceKernelClose(src);
-            msgok(WARNING, "the File %s has failed copying\nReason %x\n to continue press OK", sourcefile, out);
-            return -1;
-        }
-    }
-    else
-    {
-        log_info("[ELFLOADER] fuxking error");
-        msgok(WARNING, "the File %s has failed copying\nReason %x\n to continue press OK", sourcefile, src);
-        return -1;
-    }
-}
-
-int progstart(char* msg)
-{
-
-    int ret = 0;
-    sceSysmoduleLoadModule(ORBIS_SYSMODULE_MESSAGE_DIALOG);
-
-    ret = sceMsgDialogTerminate();
-
-    log_info("sceMsgDialogTerminate = %i", ret);
-
-    ret = sceMsgDialogInitialize();
-
-    log_info("sceMsgDialogInitialize = %i", ret);
-
-
-    OrbisMsgDialogParam dialogParam;
-    OrbisMsgDialogParamInitialize(&dialogParam);
-    dialogParam.mode = 2;
-
-    OrbisMsgDialogProgressBarParam  progBarParam;
-    memset(&progBarParam, 0, sizeof(OrbisMsgDialogProgressBarParam));
-
-    dialogParam.progBarParam = &progBarParam;
-    dialogParam.progBarParam->barType = 0;
-    dialogParam.progBarParam->msg = msg;
-
-    sceMsgDialogOpen(&dialogParam);
-
-    return ret;
-}
-
-
-bool dump = false; 
+bool dump = false;
 
 
 bool touch_file(char* destfile)
@@ -142,63 +51,6 @@ bool touch_file(char* destfile)
     }
     else
         return false;
-}
-
-bool decrypt_dir(char *sourcedir, char* destdir, char* gtitle, char* title_id)
-{
-    DIR *dir;
-    struct dirent *dp;
-    struct stat info;
-    char src_path[1024], dst_path[1024];
-
-    dir = opendir(sourcedir);
-    if (!dir)
-        return true;
-
-    mkdir(destdir, 0777);
-
-    while ((dp = readdir(dir)) != NULL)
-    {
-        if (!strcmp(dp->d_name, ".") || !strcmp(dp->d_name, ".."))
-        {
-            // do nothing (straight logic)
-        }
-        else
-        {
-            snprintf(src_path, 1023, "%s/%s", sourcedir, dp->d_name);
-            snprintf(dst_path, 1023, "%s/%s", destdir  , dp->d_name);
-            if (!stat(src_path, &info))
-            {
-                if (S_ISDIR(info.st_mode))
-                {
-                    decrypt_dir(src_path, dst_path, gtitle, title_id);
-                }
-                else
-                if (S_ISREG(info.st_mode))
-                {
-                   
-                    if (is_self(src_path))
-                    {
-                       ProgSetMessagewText(90, "Dump info\n\nApp name: %s\nTITLE_ID %s\nDecrypting %s...\n", gtitle, title_id, src_path);
-
-                       if (decrypt_and_dump_self(src_path, dst_path))
-                       {
-                           closedir(dir);
-                           return true;
-                       }
-                    }
-                    else
-                    {
-                        closedir(dir);
-                        return false;
-                    }
-                }
-            }
-        }
-    }
-    closedir(dir);
-
-    return false;
 }
 
 int wait_for_game(char *title_id)
@@ -229,10 +81,7 @@ int wait_for_game(char *title_id)
 
             if (strstr(dp->d_name, "-app0") != NULL)
             {
-
-
-                
-                res = 1;
+                 res = 1;
                 break;
             }
         }
@@ -243,194 +92,54 @@ int wait_for_game(char *title_id)
     return res;
 }
 
-int wait_for_bdcopy(char *title_id)
+bool dump_patch(char* title_id, char* usb_p, char* gtitle)
 {
-    char path[256];
-    char *buf;
-    size_t filelen, progress;
+    char src_path[255];
+    snprintf(src_path, 254, "/user/patch/%s/patch.pkg", title_id);
 
-    snprintf(path, 255, "/system_data/playgo/%s/bdcopy.pbm", title_id);
-    FILE *pbm = fopen(path, "rb");
-    if (!pbm) return 100;
-
-    fseek(pbm, 0, SEEK_END);
-    filelen = ftell(pbm);
-    fseek(pbm, 0, SEEK_SET);
-
-    buf = malloc(filelen);
-
-    fread(buf, sizeof(char), filelen, pbm);
-    fclose(pbm);
-
-    progress = 0;
-    for (int i = 0x100; i < filelen; i++)
+    print_memory();
+    if (if_exists(src_path))
     {
-        if (buf [i]) progress++;
+        log_debug("Dumping Patch...");
+        return Dumper(usb_p, title_id, GAME_PATCH, gtitle);
     }
-
-    free(buf);
-
-    return (progress * 100 / (filelen - 0x100));
+    else
+    {
+        log_debug("Patch doesnt exist...");
+        return true;
+    }
 }
 
-bool (*Dump_Meta)(char* tid, char* title) = NULL;
-
-bool dump_game(char *title_id, char *usb_path, char *gtitle)
+bool dump_game(char *title_id, char *usb_p, char *gtitle)
 {
-    char base_path[64];
-    char src_path[64];
-    char dst_file[64];
-    char dst_app[64];
-    char dst_pat[64];
-    char dump_sem[64];
-    char comp_sem[64];
-    bool flag = false;
-
-    sprintf(base_path, "%s/%s", usb_path, title_id);
-
-    sprintf(dump_sem, "%s.dumping", base_path);
-    sprintf(comp_sem, "%s.complete", base_path);
-
-
-    unlink(comp_sem);
-    touch_file(dump_sem);
-
-    sprintf(dst_app, "%s-app", base_path);
-    sprintf(dst_pat, "%s-patch", base_path);
-    mkdir(dst_app, 0777);
-    mkdir(dst_pat, 0777);
-
-    print_memory();
-
-    sprintf(src_path, "/user/app/%s/app.pkg", title_id);
-    //notify("Extracting app package...");
-
- 
-    log_info("Extracting app package...");
-
-    if(unpkg(src_path, dst_app)!= 0) flag = true;
-    log_info("flag: %i", flag);
-    sprintf(src_path, "/system_data/priv/appmeta/%s/nptitle.dat", title_id);
-    sprintf(dst_file,  "%s/sce_sys/nptitle.dat", dst_app);
-    copyFile(src_path, dst_file);
-    sprintf(src_path, "/system_data/priv/appmeta/%s/npbind.dat", title_id);
-    sprintf(dst_file, "%s/sce_sys/npbind.dat", dst_app);
-    copyFile(src_path, dst_file);
-
-    log_info("Finished app package...");
-
-    print_memory();
-
-    sprintf(src_path, "/user/patch/%s/patch.pkg", title_id);
-    if (if_exists(src_path))
-    {
-
-        //  notify("Merging patch package...");
-         log_info("Extracting patch package......");
-
-         ProgSetMessagewText(30, "Dump info\n\nApp name: %s\nTITLE_ID %s\n\nExtracting patch package...\n", gtitle, title_id);
-
-
-        if(unpkg(src_path, dst_pat)!= 0) flag = true;
-        log_info("flag: %i", flag);
-        sprintf(src_path, "/system_data/priv/appmeta/%s/nptitle.dat", title_id);
-        sprintf(dst_file,  "%s/sce_sys/nptitle.dat", dst_pat);
-        copyFile(src_path, dst_file);
-        sprintf(src_path, "/system_data/priv/appmeta/%s/npbind.dat", title_id);
-        sprintf(dst_file,  "%s/sce_sys/npbind.dat", dst_pat);
-        copyFile(src_path, dst_file);
-    }
-
-    print_memory();
-
-    log_info("finished patch package......");
-
-    sprintf(src_path, "/mnt/sandbox/pfsmnt/%s-app0-nest/pfs_image.dat", title_id);
-    //  notify("Extracting app image...");
-    log_info("Extracting app image......");
-    if(unpfs(src_path, dst_app, gtitle, title_id) != 0) flag = true;
-    log_info("flag: %i", flag);
-    log_info("finish app image......");
-
-    print_memory();
-
-    sprintf(src_path, "/mnt/sandbox/pfsmnt/%s-patch0-nest/pfs_image.dat", title_id);
-    if (if_exists(src_path))
-    {
-       
-        log_info("Extracting patch image......");
-
-        ProgSetMessagewText(80, "Dump info\n\nApp name: %s\nTITLE_ID %s\n\nExtracting patch image...\n", gtitle, title_id);
-       
-        if(unpfs(src_path, dst_pat, gtitle, title_id) != 0) flag = true;
-        log_info("flag: %i", flag);
-    }
-
-    print_memory();
-
-    sprintf(src_path, "/mnt/sandbox/pfsmnt/%s-app0", title_id);
-    if (if_exists(src_path))
-    {
-        flag = decrypt_dir(src_path, dst_app, gtitle, title_id);
-        log_info("flag: %i", flag);
-    }
-
-    print_memory();
-
-    sprintf(src_path, "/mnt/sandbox/pfsmnt/%s-patch0", title_id);
-    if (if_exists(src_path))
-    {
-        //notify("Decrypting patch...");
-        flag = decrypt_dir(src_path, dst_pat, gtitle, title_id);
-        log_info("flag: %i", flag);
-    }
-
-    snprintf(src_path, 63, "/system_data/priv/appmeta/%s/param.sfo", title_id);
-
-    if (!if_exists(src_path))
-        snprintf(src_path, 63, "/system_data/priv/appmeta/external/%s/param.sfo", title_id);
-
-    sprintf(dst_file, "%s/sce_sys/param.sfo", dst_app);
-    copyFile(src_path, dst_file);
-
-    print_memory();
-
-    if (if_exists("/mnt/sandbox/pfsmnt/NPXS39041-app0/Media/dump.prx"))
-    {
-        SceKernelModule module_id = -1;
-        sys_dynlib_load_prx("/mnt/sandbox/pfsmnt/NPXS39041-app0/Media/dump.prx", &module_id);
-        if (module_id >= 0)
-        {
-            //PRX_INTERFACE void LaunchGamePRX();
-            int ret = sys_dynlib_dlsym(module_id, "Dump_Meta", &Dump_Meta);
-            if (!ret)
-            {
-                if (Dump_Meta != NULL)
-                {
-                    flag = Dump_Meta(title_id, gtitle);
-                    log_debug("Dump_Meta() returned %s\n", flag ? "true" : "false");
-                }
-            }
-            else
-            {
-                log_debug("failed to resolve\n");
-            }
-
+    char buff[255];
+    sprintf(buff, "/mnt/sandbox/pfsmnt/%s-app0-nest/pfs_image.dat", title_id);
+    if (if_exists(buff)) {
+        //false on success
+        //true on error
+        //true refers to the error flag, if the flag is true then fail
+        if (Dumper(usb_p, title_id, BASE_GAME, gtitle)) {
+            return dump_patch(title_id, usb_p, gtitle);
         }
-        else
-        {
-            log_debug("failed to load\n");
+        else {
+            log_debug("Dumping Base game failed, trying to dump as Remaster...");
+            if (Dumper(usb_p, title_id, REMASTER, gtitle))
+                return dump_patch(title_id, usb_p, gtitle);
         }
+        sprintf(buff, "%s/%s.complete", usb_p, title_id);
+        touch_file(buff);
+        sprintf(buff, "%s/%s-patch.complete", usb_p, title_id);
+        touch_file(buff);
+        sprintf(buff, "%s/%s.dumping", usb_p, title_id);
+        unlink(buff);
+        sprintf(buff, "%s/%s-patch.dumping", usb_p, title_id);
+        unlink(buff);
     }
-    unlink(dump_sem);
-    touch_file(comp_sem);
+    else
+        msgok(WARNING,"BETA ERROR: pfs_mount.dat cant be open");
 
-    sceMsgDialogTerminate();
-    log_info( "flag = %i", flag);
 
-    print_memory();
-
-    return flag;
+    return false;
 }
 
 static int (*rejail_multi)(void) = NULL;
@@ -453,7 +162,7 @@ void Exit_Success(const char* text)
 
 void Exit_App_With_Message(int sig_numb)
 {
-   msgok(NORMAL, "############# Program has gotten a FATAL Signal/Error: %i ##########\n\n If this continues Contact the PKG-Zone team\n\n", sig_numb);
+   msgok(NORMAL, "############# Program has gotten a FATAL Signal/Error: %i ##########\n\n %s\n\n", sig_numb, getLangSTR(PKG_TEAM));
 
    char *buff[100];
    //init srand
@@ -469,25 +178,83 @@ void Exit_App_With_Message(int sig_numb)
    Exit_Success("Exit_App_With_Message ->");
 }
 
+void reload() {
+    //New store loader is Store.self
+    if (if_exists("/data/self/Store.self"))
+        sceSystemServiceLoadExec("/data/self/Store.self", 0);
+    else // the old store loader is eboot.bin
+        sceSystemServiceLoadExec("/data/self/eboot.bin", 0);
+}
+
+
+static void OrbusKernelBacktrace(const char* reason) {
+    char addr2line[MAX_STACK_FRAMES * 20];
+    callframe_t frames[MAX_STACK_FRAMES];
+    OrbisKernelVirtualQueryInfo info;
+    char buf[MAX_MESSAGE_SIZE + 3];
+    unsigned int nb_frames = 0;
+    char temp[80];
+
+    memset(addr2line, 0, sizeof addr2line);
+    memset(frames, 0, sizeof frames);
+    memset(buf, 0, sizeof buf);
+
+    snprintf(buf, sizeof buf, "<118>[Crashlog]: %s\n", reason);
+
+    strncat(buf, "<118>[Crashlog]: Backtrace:\n", MAX_MESSAGE_SIZE);
+    sceKernelBacktraceSelf(frames, sizeof frames, &nb_frames, 0);
+    for (unsigned int i = 0; i < nb_frames; i++) {
+        memset(&info, 0, sizeof info);
+        sceKernelVirtualQuery(frames[i].pc, 0, &info, sizeof info);
+
+        snprintf(temp, sizeof temp,
+            "<118>[Crashlog]:   #%02d %32s: 0x%lx\n",
+            i + 1, info.name, frames[i].pc - info.unk01 - 1);
+        strncat(buf, temp, MAX_MESSAGE_SIZE);
+
+        snprintf(temp, sizeof temp,
+            "0x%lx ", frames[i].pc - info.unk01 - 1);
+        strncat(addr2line, temp, sizeof addr2line - 1);
+    }
+
+    strncat(buf, "<118>[Crashlog]: addr2line: ", MAX_MESSAGE_SIZE);
+    strncat(buf, addr2line, MAX_MESSAGE_SIZE);
+    strncat(buf, "\n", MAX_MESSAGE_SIZE);
+
+    buf[MAX_MESSAGE_SIZE + 1] = '\n';
+    buf[MAX_MESSAGE_SIZE + 2] = '\0';
+
+    //log_debug(buf);
+}
+
+
 void SIG_Handler(int sig_numb)
 {
+#ifdef OBRIS_BACKTRACE
+    OrbusKernelBacktrace("Fatal Signal");
+#endif
     int libcmi = 1;
     sys_dynlib_load_prx("/app0/Media/jb.prx", &libcmi);
     sys_dynlib_dlsym(libcmi, "rejail_multi", &rejail_multi);
 
-    void* array[100];
+    void* bt_array[255];
     //
 
     switch (sig_numb)
     {
     case SIGABRT:
         log_debug("ABORT called");
+        if (dump)
+        {
+            msgok(WARNING, getLangSTR(FATAL_DUMP_ERROR));
+            reload();
+        }
         break;
     case SIGTERM:
         log_debug("TERM called");
         break;
     case SIGINT:
-        log_debug("TERM called");
+        log_debug("SIGINT called");
         break;
     case SIGQUIT:
         Exit_Success("SIGQUIT Called");
@@ -509,9 +276,8 @@ void SIG_Handler(int sig_numb)
         IPCSendCommand(DISABLE_HOME_REDIRECT, IPC_BUFFER);
         if (dump)
         {
-            msgok(WARNING, "The Game Dump has failed to the app will now reload\n Press OK to continue");
-            sceSystemServiceLoadExec("/data/self/eboot.bin", 0);
-            goto App_Resumed;
+            msgok(WARNING, getLangSTR(FATAL_DUMP_ERROR));
+            reload();
         }
         free(IPC_BUFFER);
         goto backtrace_and_exit;
@@ -575,7 +341,7 @@ backtrace_and_exit:
         fclose(fp);
     }
     log_debug("###################  Backtrace  ########################");
-    backtrace(array, 100);
+    backtrace(bt_array, 255);
     Exit_App_With_Message(sig_numb);
 
 
@@ -585,90 +351,60 @@ log_debug("placeholder 1");
 App_Resumed:
 log_debug("placeholder 2");
 
-log_info("title_id: %s, title: %s", title_id, title);
+log_info("title_id: %s, title: %s, usb_path: %s", title_id, title, usbpath());
+
 
 //  char* title_id = "CUSA02290";
     if (dump)
     {
         int progress;
-        bool flag_issue = false;
-        char notify_buf[1024];
+        char n_buf[1024];
         int fd;
 
 
-        progstart("Starting the Dumper...");
+        progstart(getLangSTR(STARTING_DUMPER));
 
-        sprintf(notify_buf, "/mnt/usb0/%s-app/", title_id);
-        if (if_exists(notify_buf))
+        sprintf(n_buf, "/mnt/usb0/%s/", title_id);
+        if (if_exists(n_buf))
         {
-            ProgSetMessagewText(5, "Folder already Exists..\nDeleting %s", notify_buf);
-            rmtree(notify_buf);
-            sprintf(notify_buf, "/mnt/usb0/%s.complete", title_id);
-            unlink(notify_buf);
+            if(get->lang == 1 || get->lang == 18)
+               ProgSetMessagewText(5, "Folder already Exists..\nDeleting %s", n_buf);
+
+            rmtree(n_buf);
+            sprintf(n_buf, "/mnt/usb0/%s.complete", title_id);
+            unlink(n_buf);
         }
 
-        sprintf(notify_buf, "/mnt/usb0/%s-patch/", title_id);
-        if (if_exists(notify_buf))
+        sprintf(n_buf, "/mnt/usb0/%s-patch/", title_id);
+        if (if_exists(n_buf))
         {
-            ProgSetMessagewText(8, "Folder already Exists..\nDeleting %s", notify_buf);
-            rmtree(notify_buf);
+            if (get->lang == 1 || get->lang == 18)
+               ProgSetMessagewText(8, "Folder already Exists..\nDeleting %s", n_buf);
+
+            rmtree(n_buf);
         }
         
         //g
 
-        if (!wait_for_game(title_id[0]))
-        {
-
-
-            ProgSetMessagewText(10, "Waiting for game to launch...");
-
-            
-
-
+        if (!wait_for_game(title_id)){
+            ProgSetMessagewText(5, "Waiting for game to launch...");
+        }
         do {
             sceKernelSleep(1);
 
         }
         while (!wait_for_game(title_id));
         
-      }
-
-
-    if (wait_for_bdcopy(title_id) < 100)
-    {
-        do {
-            sceKernelSleep(1);
-            progress = wait_for_bdcopy(title_id);
-            snprintf(notify_buf, 1023, "Waiting for game to copy\n\n%u%% completed...", progress);
-
-            progstart(notify_buf);
-
-            uint32_t g_progress = (uint32_t)(((float)progress / 100) * 100.f);
-
-            ProgSetMessagewText(g_progress, notify_buf);
-
-
-        }
-        while (progress < 100);
-        sceMsgDialogTerminate();
-        
-    }
-
-        
-        progstart("Starting the Game Dumper...");
-
         //dump_game has all the dialoge for copied proc
-        flag_issue = dump_game(title_id, get->opt[ USB_PATH ], title);
-       // Dump_Game(title_id, title);
-        if(!flag_issue)
-           msgok(NORMAL, "Dump of %s is Complete without Errors!", title_id);
+        if (dump_game(title_id, usbpath(), title))
+            msgok(NORMAL, "%s %s %s", getLangSTR(DUMP_OF), title_id, getLangSTR(COMPLETE_WO_ERRORS));
         else
-            msgok(WARNING, "Dump of %s Has Completed with Issues NOT all files were dumped!\n\nMake sure your exploit hoster has MMAP patches enabled", title_id);
+            msgok(WARNING, "%s %s %s", getLangSTR(DUMP_OF), title_id, getLangSTR(DUMP_FAILED));
 
         print_memory();
 
         log_info("finished");
         dump = false;
     }
-    //
+    
 }

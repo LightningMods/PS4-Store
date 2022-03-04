@@ -7,6 +7,7 @@
 */
 
 #include "defines.h"
+#include "shaders.h"
 
 /*
     https://raster.shields.io/badge/Available-On%20Store-1d86f0.png

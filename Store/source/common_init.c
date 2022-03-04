@@ -5,12 +5,13 @@
 #include <stdlib.h>  // malloc, qsort, free
 #include <unistd.h>  // close
 #include <sys/signal.h>
-#include <sig_handler.h>
+#include "defines.h"
 #include <stdbool.h>
 #include <utils.h>
 #include <errno.h>
 #include <sys/socket.h>
 #include <user_mem.h> 
+#include "lang.h"
 extern bool dump;
 
 #if defined (__ORBIS__)
@@ -20,10 +21,10 @@ extern bool dump;
 #include <orbislink.h>
 #include <libkernel.h>
 #include <sys/mman.h>
-#include <ImeDialog.h>
+
 #include <utils.h>
-#include <MsgDialog.h>
-#include <CommonDialog.h>
+
+#include <dialog.h>
 #define  fprintf  debugNetPrintf
 #define  ERROR    DEBUGNET_ERROR
 #define  DEBUG    DEBUGNET_DEBUG
@@ -38,8 +39,6 @@ extern bool dump;
 #define  INFO            stdout
 
 #endif
-
-#include <Header.h>
 #include <md5.h>
 
 #include <orbislink.h>
@@ -84,65 +83,61 @@ extern StoreOptions set,
                    *get;
 
 
-/* XXX: patches below are given for Piglet module from 4.74 Devkit PUP */
-static void pgl_patches_cb(void* arg, uint8_t* base, uint64_t size)
-{
-    /* Patch runtime compiler check */
-    const uint8_t p_set_eax_to_1[] = {
-        0x31, 0xC0, 0xFF, 0xC0, 0x90,
-    };
-    memcpy(base + 0x5451F, p_set_eax_to_1, sizeof(p_set_eax_to_1));
-    /* Tell that runtime compiler exists */
-    *(uint8_t*)(base + 0xB2DEC) = 0;
-    *(uint8_t*)(base + 0xB2DED) = 0;
-    *(uint8_t*)(base + 0xB2DEE) = 1;
-    *(uint8_t*)(base + 0xB2E21) = 1;
-    /* Inform Piglet that we have shader compiler module loaded */
-    *(int32_t*)(base + 0xB2E24) = s_shcomp_module;
-}
-
-
 bool is_connected_app = false;
 
 extern uint8_t daemon_eboot[];
 extern int32_t daemon_eboot_size;
 
 
-#define  LATEST_DAEMON_VERSION 0x1001
+#define  LATEST_DAEMON_VERSION 0x1002
 static int (*rejail_multi)(void) = NULL;
+int daemon_ver = 0x1337;
+static int daemon_ini(void* user, const char* section, const char* name,
+    const char* value)
+{
+
+#define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
+
+    if (MATCH("Daemon", "version")) {
+        log_debug("DVERLL: %s", value);
+        daemon_ver = atoi(value);
+    }
+
+    return 1;
+}
+
+
 
 bool is_daemon_outdated(void)
 {
-    int daemon_ver = INVALID;
-
-    pl_ini_file file;
+    
     if (!if_exists(DAEMON_PATH"/daemon.ini"))
         return false;
     else
     {
         log_debug("Daemon INI Does exist");
-        pl_ini_load(&file, DAEMON_PATH"/daemon.ini");
-        daemon_ver = pl_ini_get_int(&file, "Daemon", "version", 0x1337);
+        int error = ini_parse(DAEMON_PATH"/daemon.ini", daemon_ini, NULL);
+        if (error) { log_error("Bad config file (first error on line %d)!\n", error); return false; }
         log_info("Daemon Version: %x, Latest Version: %x, Is Outdated?: %s", daemon_ver, LATEST_DAEMON_VERSION, daemon_ver == LATEST_DAEMON_VERSION ? "No" : "Yes");
-
-        /* Clean up */
-        pl_ini_destroy(&file);
     }
 
-    return (bool)daemon_ver == LATEST_DAEMON_VERSION;
+    log_debug("D: %i.", (daemon_ver == LATEST_DAEMON_VERSION));
+
+    return (daemon_ver == LATEST_DAEMON_VERSION);
 }
 
 bool init_daemon_services(bool redirect)
 {
 
-
+    char* buff[100];
+    memset(buff, 0, 99);
     uint8_t* IPC_BUFFER = malloc(100);
     int fd = -1;
     if (!if_exists(DAEMON_PATH) || !is_daemon_outdated())
     {
         if (!!mountfs("/dev/da0x4.crypt", "/system", "exfatfs", "511", 0x00010000))
         {
-            log_error("mounting /system failed with %s", strerror(errno));
+            log_error("mounting /system failed with %s.", strerror(errno));
             return false;
         }
         else
@@ -162,11 +157,26 @@ bool init_daemon_services(bool redirect)
                     write(fd, daemon_eboot, daemon_eboot_size);
                     close(fd);
 
-                    pl_ini_file file;
-                    pl_ini_create(&file);
-                    pl_ini_set_int(&file, "Daemon", "version", LATEST_DAEMON_VERSION);
-                    pl_ini_save(&file, DAEMON_PATH"/daemon.ini");
+                    IPCSendCommand(DEAMON_UPDATE, IPC_BUFFER);
+
+                    snprintf(buff, 99, "[Daemon]\nversion=%i\n", LATEST_DAEMON_VERSION);
+                    fd = open(DAEMON_PATH"/daemon.ini", O_WRONLY | O_CREAT | O_TRUNC, 0777);
+                    if (fd >= 0)
+                    {
+                        write(fd, buff, strlen(buff));
+                        close(fd);
+                    }
+                    else {
+                        return false;
+                    }
+
                     chmod(DAEMON_PATH"/daemon.ini", 0777);
+
+                    //New store loader is Store.self
+                    if (if_exists("/data/self/Store.self"))
+                        sceSystemServiceLoadExec("/data/self/Store.self", 0);
+                    else // the old store loader is eboot.bin
+                        sceSystemServiceLoadExec("/data/self/eboot.bin", 0);
                 }
                 else
                 {
@@ -179,54 +189,50 @@ bool init_daemon_services(bool redirect)
                 log_error("Copying Daemon files failed");
                 return false;
             }
-            IPCSendCommand(DEAMON_UPDATE, IPC_BUFFER);
         }
     }
-
     //Launch Daemon with silent
     uint32_t res = Launch_App("ITEM00002", true);
-    if (res != SCE_LNC_UTIL_ERROR_ALREADY_RUNNING)
+    log_info("[StoreCore][APP] sceLncLaunchApp returned 0x%x", res);
+    if (res != SCE_LNC_UTIL_ERROR_ALREADY_RUNNING && res != ORBIS_KERNEL_EAGAIN) //EAGAIN
     {
-        if (rejail_multi != NULL)
-        {
-            int libcmi = 1;
-            sys_dynlib_load_prx("/system/vsh/app/ITEM00002/Media/jb.prx", &libcmi);
-            if (!sys_dynlib_dlsym(libcmi, "rejail_multi", &rejail_multi))
-                rejail_multi();
-        }
-        sceSystemServiceLoadExec("/data/self/eboot.bin");
+        //New store loader is Store.self
+       if (if_exists("/data/self/Store.self"))
+            sceSystemServiceLoadExec("/data/self/Store.self", 0);
+       else // the old store loader is eboot.bin
+            sceSystemServiceLoadExec("/data/self/eboot.bin", 0);
+    }
+    if (res == ORBIS_KERNEL_EAGAIN)
+    {
+        log_error("ORBIS_KERNEL_EAGAIN Returned");
+        return false;
     }
     
 
-    loadmsg("Waiting for Daemon's Welcome Response (max 1 min)");
+    loadmsg(getLangSTR(WAITING_FOR_DAEMON));
+
 
     int error = INVALID, wait = INVALID;
     // Wait for the Daemon to respond
     do {
 
-        if (wait >= 60)
-        {
-            log_error("Daemon timed out");
-            return false;
+        error = IPCSendCommand(CONNECTION_TEST, IPC_BUFFER);
+        log_info("---- Error: %s", error == INVALID ? "Failed to Connect" : "Success");
+        if (error == NO_ERROR) {
+            sceMsgDialogTerminate();
+            log_debug("Took the Daemon %i extra commands attempts to respond", wait);
+            is_connected_app = true;
         }
-        else
-            wait++;
+
+        if (wait >= 60)
+            break;
 
         sleep(1);
+        wait++;
 
      //File Flag the Daemon creates when initialization is complete
     // and the Daemon IPC server is active
-    } while (!if_exists("/system_tmp/IPC_init")); 
-    
-     error = IPCSendCommand(CONNECTION_TEST, IPC_BUFFER);
-     log_info("---- Error: %s", error == INVALID ? "Failed to Connect" : "Success");
-     if (error == NO_ERROR) {
-         sceMsgDialogTerminate();
-         log_debug("Took the Daemon %i extra commands attempts to respond", wait);
-         is_connected_app = true;
-      }
-    
-
+    } while (error == INVALID);
 
     if (is_connected_app)
     {
@@ -252,12 +258,14 @@ bool init_daemon_services(bool redirect)
 
 }
 
+
 int initGL_for_the_store(bool reload_apps, int ref_pages)
 {
     int ret = 0;
     char tmp[100];
 
     unlink(STORE_LOG);
+    mkdir("/user/app/NPXS39041/pages", 0777);
     //Keep people from backing up the Sig file
     unlink("/user/app/NPXS39041/homebrew.elf.sig");
 
@@ -265,7 +273,11 @@ int initGL_for_the_store(bool reload_apps, int ref_pages)
     log_set_quiet(false);
     log_set_level(LOG_DEBUG);
     FILE* fp = fopen(STORE_LOG, "w");
-    log_add_fp(fp, LOG_DEBUG);
+    if (fp != NULL)
+      log_add_fp(fp, LOG_DEBUG);
+    log_info("Clearing the Download folder...");
+    rmtree("/user/app/NPXS39041/downloads"); 
+    mkdir("/user/app/NPXS39041/downloads", 0777);
     //USB LOGGING
    /* if (strstr(usbpath(), "/mnt/usb"))
     {
@@ -274,7 +286,7 @@ int initGL_for_the_store(bool reload_apps, int ref_pages)
         fp = fopen(tmp, "w");
         if(fp != NULL)
         log_add_fp(fp, LOG_DEBUG);
-    }*/
+    }count_availables_json*/
     /* -- END OF LOGINIT --*/
 
 
@@ -286,40 +298,18 @@ if(reload_apps)
     get = &set;
 
     // internals: net, user_service, system_service
-    ret = loadModulesVanilla();
-    // pad
-    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_PAD);
-    if(ret) return -1;
-    //Ime
-    ret = sceSysmoduleLoadModule(ORBIS_SYSMODULE_IME_DIALOG);
-    if(ret) return -1;
-    //MSGDIALOG
-    ret = sceSysmoduleLoadModule(ORBIS_SYSMODULE_MESSAGE_DIALOG);
-    if(ret) return -1; 
-
-    ret =  sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_NETCTL);
-    if(ret) return -1;
-
-    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_NET);
-    if(ret) return -1;
-    
-    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_HTTP);
-    if(ret) return -1;
-
-    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_SSL);
-    if(ret) return -1;
-
-    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_COMMON_DIALOG); 
-    if(ret) return -1;
-    
-    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_SYSUTIL);
-    if(ret) return -1;
-    
-    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_BGFT);  
-    if(ret) return -1;
-    
-    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_APPINSTUTIL);  
-    if(ret) return -1;
+    loadModulesVanilla();
+    if (sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_PAD)) return INIT_FAILED;
+    if (sceSysmoduleLoadModule(ORBIS_SYSMODULE_IME_DIALOG)) return INIT_FAILED;
+    if (sceSysmoduleLoadModule(ORBIS_SYSMODULE_MESSAGE_DIALOG)) return INIT_FAILED;
+    if (sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_NETCTL)) return INIT_FAILED;
+    if (sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_NET)) return INIT_FAILED;
+    if (sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_HTTP)) return INIT_FAILED;
+    if (sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_SSL)) return INIT_FAILED;
+    if (sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_COMMON_DIALOG)) return INIT_FAILED;
+    if (sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_SYSUTIL)) return INIT_FAILED;
+    if (sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_BGFT)) return INIT_FAILED;
+    if (sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_APPINSTUTIL)) return INIT_FAILED;
 
     //Dump code and sig hanlder
     struct sigaction new_SIG_action;
@@ -333,44 +323,45 @@ if(reload_apps)
            sigaction(i, &new_SIG_action, NULL);
     }
 
-
+    
     OrbisUserServiceInitializeParams params;
     memset(&params, 0, sizeof(params));
     params.priority = 700;
-
+    
     sceCommonDialogInitialize();
     sceMsgDialogInitialize();
+    
+    if (!orbisPadInit()) return INIT_FAILED;
 
-    ret = orbisPadInit();
-    if (ret != 1) return -2;
+    globalConf.confPad = orbisPadGetConf();
 
+    //rif_exp("/user/license/freeIV0002-NPXS39041_00.rif");
 
-    if(MD5_hash_compare("/user/app/NPXS39041/pig.sprx",   "854a0e5556eeb68c23a97ba024ed2aca") == SAME_HASH
-    && MD5_hash_compare("/user/app/NPXS39041/shacc.sprx", "8a21eb3ed8a6786d3fa1ebb1dcbb8ed0") == SAME_HASH)
+    mkdir("/user/app/NPXS39041/covers", 0777);
+
+    if (!LoadOptions(get)) msgok(WARNING, getLangSTR(INI_ERROR));
+    
+#ifndef HAVE_SHADER_COMPILER
+    if((ret = sceKernelLoadStartModule("/system/common/lib/libScePigletv2VSH.sprx", NULL, NULL, NULL, NULL, NULL)) >= PS4_OK)
+#else
+    if ((s_piglet_module = sceKernelLoadStartModule("/data/piglet.sprx", NULL, NULL, NULL, NULL, NULL)) >= PS4_OK &&
+        (s_shcomp_module = sceKernelLoadStartModule("/data/compiler.sprx", NULL, NULL, NULL, NULL, NULL)) >= PS4_OK)
+#endif
+
     {
-        globalConf.confPad = orbisPadGetConf();
-
-        mkdir("/user/app/NPXS39041/covers", 0777);
-        // customs
-        s_piglet_module = sceKernelLoadStartModule("/user/app/NPXS39041/pig.sprx",   0, NULL, 0, NULL, NULL);
-        s_shcomp_module = sceKernelLoadStartModule("/user/app/NPXS39041/shacc.sprx", 0, NULL, 0, NULL, NULL);
-
-        if(! patch_module("pig.sprx", &pgl_patches_cb, NULL, /*debugnetlevel*/3)) return -3;
-
-        if(!LoadOptions(get)) msgok(WARNING, "Could NOT find/open the INI File");
-
+       
+        
         if (get->Daemon_on_start)
         {
+            
             if (!init_daemon_services(get->HomeMenu_Redirection))
-                msgok(WARNING, "The Itemzflow init_daemon_services failed\nThis may cause some things not work\nif you have a USB Inserted check the log");
+                msgok(WARNING, getLangSTR(FAILED_DAEMON));
             else
-                log_debug("The Itemzflow init_daemon_services succeeded");
+                log_debug("The Itemzflow init_daemon_services succeeded.");
         }
         else
-            msgok(WARNING, "The Itemzflow Daemon Auto start is turned off\nThis may cause some things not work");
-        
-
-        
+            msgok(WARNING, getLangSTR(DAEMON_OFF));
+       
 
         if (reload_apps)
         {
@@ -378,17 +369,20 @@ if(reload_apps)
                 sceSystemServiceLoadExec("/data/self/eboot.bin", NULL);
 
             total_pages = check_store_from_url(0, get->opt[CDN_URL], COUNT);
-            if(total_pages == ref_pages)
-                 return 0;
+            if(total_pages == ref_pages) return PS4_OK;
         }
 
-        loadmsg("Downloading and Caching Website files....");
-
+        loadmsg("%s", getLangSTR(DL_CACHE));
         log_info("get->Legacy? %s (%i)", get->Legacy ? "true" : "false", get->Legacy);
-
+        
         if (!get->Legacy)
         {
+            
             total_pages = check_store_from_url(0, get->opt[CDN_URL], COUNT);
+            if (count_availables_json() > total_pages) {
+                log_info("count_availables_json(%i) > total_pages(%i) clearing folder...", count_availables_json(), total_pages);
+                rmtree("/user/app/NPXS39041/pages");
+            }
             for (int i = 1; total_pages >= i; i++)
             {
                 getjson(i, get->opt[CDN_URL], false);
@@ -408,24 +402,28 @@ if(reload_apps)
 
 #if BETA==1
         if (check_store_from_url(NULL, NULL, BETA_CHECK) == 200)
-            msgok(NORMAL, "You have been Logged in as a Beta User");
-        else
-            msgok(FATAL, "The BETA has ended or been Revoked please change your CDN");
+            msgok(NORMAL, getLangSTR(BETA_LOGGED_IN));
+        else {
+            msgok(FATAL, getLangSTR(BETA_REVOKED));
+            return INIT_FAILED;
+        }
 #endif
-
-        setup_store_assets(get);
 
         sceMsgDialogTerminate();
     }
-    else
-    {
-        //Delete SPRXS with wrong hash, if they dont exist loader will redownload
-        unlink("/user/app/NPXS39041/pig.sprx");
-        unlink("/user/app/NPXS39041/shacc.sprx");
-        msgok(FATAL, "SPRX ARE NOT THE SAME HASH ABORTING");
+    else {
+#ifndef HAVE_SHADER_COMPILER 
+        msgok(FATAL, "%s 0x%x\nPS4 Path: /system/common/lib/libScePigletv2VSH.sprx", ret, getLangSTR(PIG_FAIL));
+#else
+        msgok(FATAL, "HAS_SHADER_COMP: Piglet (custom) failed to load with 0x%x\nPiglet Path: /data/piglet.sprx, Compiler Path: /data/compiler.sprx", s_piglet_module);
+#endif
+        return INIT_FAILED;
     }
 
-
+    //dont_show_donate_message
+    if (!if_exists("/data/DSDM"))
+        msgok(NORMAL, "Do You enjoy the Homebrew Store?\n\nIf you do, consider supporting us here at https://pkg-zone.com\nOR\nBy one of the following methods\nKo-fi: https://ko-fi.com/lightningmods\nBTC: 3MEuZAaA7gfKxh9ai4UwYgHZr5DVWfR6Lw");
+    
     // all fine.
-    return 0;
+    return PS4_OK;
 }

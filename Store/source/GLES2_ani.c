@@ -6,10 +6,8 @@
 
 #include <stdio.h>
 #include <string.h>
-
 #include "defines.h"
-
-#include "ani.h"
+#include "shaders.h"
 
 // ------------------------------------------------------- typedef & struct ---
 typedef struct {
@@ -129,18 +127,7 @@ void GLES2_ani_test( fx_entry_t *_ani )
 // --------------------------------------------------------- custom shaders ---
 static GLuint CreateProgram( void )
 {
-#if 0
-    /* load shaders from file, free then */
-    const GLchar  *vShader = (void*) orbisFileGetFileContent( "/user/app/NPXS39041/storedata/ani.vert" );
-    const GLchar  *fShader = (void*) orbisFileGetFileContent( "/user/app/NPXS39041/storedata/ani.frag" );
-#else
-    /* use embedded glsl source */
-    #include "ani_vert.h"
-    #include "ani_frag.h"
-    GLchar  *vShader = &ani_vert[0];
-    GLchar  *fShader = &ani_frag[0];
-#endif
-    GLuint programID = BuildProgram(vShader, fShader); // shader_common.c
+    GLuint programID = BuildProgram(ani_vs, ani_fs, ani_vs_length, ani_fs_length); // shader_common.c
 
     if (!programID)
     {
@@ -253,8 +240,8 @@ for (int i = 0; i < 10; ++i)
 #if 1 // text_ani
     text_buffer = vertex_buffer_new( "vertex:3f,tex_coord:2f,color:4f" );
 
-    font = texture_font_new_from_memory(atlas, 64, _hostapp_fonts_zrnic_rg_ttf,
-                                                   _hostapp_fonts_zrnic_rg_ttf_len);
+    font = texture_font_new_from_memory(atlas, 64, font_ttf,font_len);
+
     // print something
     char *s = "test ani";   // set text
 

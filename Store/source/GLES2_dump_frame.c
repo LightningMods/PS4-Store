@@ -5,6 +5,7 @@
 
 
 #include "defines.h"
+#include "shaders.h"
 
 extern vec2 resolution;
 
@@ -15,7 +16,7 @@ extern vec2 resolution;
     we "trig it" to do following this flow
  */
 
-#include <memory.h>
+#include <user_mem.h>
 
 GLuint renderedTexture = 0;     // The texture we're going to render to
 int *dump_buffer       = NULL;  // never free, but reuse it

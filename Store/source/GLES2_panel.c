@@ -17,14 +17,14 @@
 #endif
 
 #include "defines.h"
-
+#include "shaders.h"
 #include "GLES2_common.h"
 
 #include "json.h"
+extern char* group_label[8];
+extern vec2 resolution;
 
-
-// check for pattern in whitelist patterns, if there take count, if not fall in Other
-static char *group_label[] =
+static char* group_labels[] =
 {   // 0 is reserved index for: (label, total count)
     "HB Game",
     "Emulator",
@@ -34,6 +34,9 @@ static char *group_label[] =
     "Utility",
     "Other"
 };
+
+
+// check for pattern in whitelist patterns, if there take count, if not fall in Other
 
 /* pattern from icon tokens, item for Group arrays */
 static int check_for_token(char *pattern, item_t *item, int count)
@@ -63,57 +66,59 @@ static int check_for_token(char *pattern, item_t *item, int count)
 }
 
 // we return an array of indexes and count number, per Group
-item_t *analyze_item_t_v2(item_t *items, int item_count)
+item_t* analyze_item_t_v2(item_t* items, int item_count)
 {
     // same number of group_labels, +1 for reserved main index
-    int  i, count = sizeof(group_label) / sizeof(group_label[0]) +1;
+    int  i, count = sizeof(group_labels) / sizeof(group_labels[0]) + 1;
     // dynalloc
-    item_t   *ret = calloc(count, sizeof(item_t));
-    item_idx_t *t = NULL;
-    
+    item_t* ret = calloc(count, sizeof(item_t));
+    item_idx_t* t = NULL;
+
     // init: fill the Groups labels
-    for(i = 1; i < count; i++)
+    for (i = 1; i < count; i++)
     {   // we expect no more than this number, per Group label
         ret[i].token_c = 128;
         // dynalloc for item_idx_t
-        if(!ret[i].token_d)
+        if (!ret[i].token_d)
             ret[i].token_d = calloc(ret[i].token_c, sizeof(item_idx_t));
-//        log_info("%s %p", __FUNCTION__, layout->item_d[idx].token_d);
-        // clean count, address token
+        //        log_info("%s %p", __FUNCTION__, layout->item_d[idx].token_d);
+                // clean count, address token
         t = &ret[i].token_d[0];
-             ret[i].token_c = 0;
+        ret[i].token_c = 0;
         // address the label
-        t->off = group_label[i -1];
+        t->off = group_labels[i - 1];
         t->len = 0;
     }
     // reserved index (0)!
     ret[0].token_d = NULL;
-    ret[0].token_c = count -1;
+    ret[0].token_c = count - 1;
 
     /*  count for label, iterate all passed items
         index for each Group in token_data[ ].len */
-    for(i = 0; i < item_count; i++)
+    for (i = 0; i < item_count; i++)
     {
-        t = &items[i].token_d[ APPTYPE ];
+        t = &items[i].token_d[APPTYPE];
         // in which Group fall this item?
         int res = check_for_token(t->off, &ret[0], count);
-/*      log_info("%d %d: %s (%d) %s", i, res, ret[ res ].token_d[0].off,
-                                              ret[ res ].token_c, t->off); */
-        int idx = ret[ res ].token_c;
+        /*      log_info("%d %d: %s (%d) %s", i, res, ret[ res ].token_d[0].off,
+                                                      ret[ res ].token_c, t->off); */
+        int idx = ret[res].token_c;
         // store the index for item related to icon_panel list!
-        ret[ res ].token_d[ idx ].len = i;
+        ret[res].token_d[idx].len = i;
     }
 
 #if 1
     // done building the item_t array, now we check items sum
     int check = 0;
-    for(i = 1; i < count; i++)
+    for (i = 1; i < count; i++)
     {   // report the main reserved index
+        t = &ret[i].token_d[0];
+        t->off = group_label[i - 1];
         log_info("%d %s: %d", i, ret[i].token_d[0].off,
-                                 ret[i].token_c);
+            ret[i].token_c);
         // shrink buffers, remember +1 !!!
         ret[i].token_d = realloc(ret[i].token_d, (ret[i].token_c + 1)
-                                               * sizeof(item_idx_t));
+            * sizeof(item_idx_t));
         check += ret[i].token_c;
     }
     log_info("Sorted %d items across %d Groups", check, ret[0].token_c + 1);
@@ -316,8 +321,8 @@ void GLES2_Draw_sysinfo(void)
         if (numb > 140)
             log_warn("PS4 Temp is above max");
 
-        sceKernelAvailableFlexibleMemorySize(&fmem);
-        snprintf(&tmp[0], 127, "System Version: %x, %d°C, %zub", SysctlByName_get_sdk_version(), numb, fmem);
+         sceKernelAvailableFlexibleMemorySize(&fmem);
+         snprintf(&tmp[0], 127, "%s: %x, %d°C, %zub", getLangSTR(SYS_VER),SysctlByName_get_sdk_version(), numb, fmem);
         // we need to know Text_Length_in_px in advance, so we call this:
         texture_font_load_glyphs( main_font, &tmp[0] ); 
         // we know 'tl' now, right align
@@ -327,7 +332,7 @@ void GLES2_Draw_sysinfo(void)
         // fill the vbo
         add_text( t_vbo, main_font, &tmp[0], &c, &pen);
 
-        snprintf(&tmp[0], 127, "Store Version: %s", &completeVersion[0]);
+        snprintf(&tmp[0], 127, "%s: %s", getLangSTR(STORE_VER),&completeVersion[0]);
         // we need to know Text_Length_in_px in advance, so we call this:
         texture_font_load_glyphs( main_font, &tmp[0] ); 
         // we know 'tl' now, right align
@@ -335,6 +340,23 @@ void GLES2_Draw_sysinfo(void)
         pen.y -= 32;
         // fill the vbo
         add_text( t_vbo, main_font, &tmp[0], &c, &pen);
+        // eventually, skip dfp on some view...
+        if(menu_pos.z < ON_ITEMzFLOW)
+        {   /* text for disk_free stats */
+               pen = (vec2) { 26, 100 };
+            vec4 c = col * .75f;
+            //
+            if(strstr(usbpath(), "/mnt/usb"))
+            {   // get mountpoint stat info
+                dfp_ext = df(&tmp[0], "/mnt/usb0");
+                
+            } else
+                dfp_ext = 0;
+            // start upper
+            if(dfp_ext > 0) pen.y += 32;
+            // fill the vbo
+            add_text( t_vbo, sub_font, getLangSTR(STORAGE), &col, &pen);
+         }
 
         // eventually, skip dfp on some view...
         if(menu_pos.z < ON_ITEMzFLOW)
@@ -351,7 +373,7 @@ void GLES2_Draw_sysinfo(void)
             // start upper
             if(dfp_ext > 0) pen.y += 32;
             // fill the vbo
-            add_text( t_vbo, sub_font, "Storage", &col, &pen);
+            add_text( t_vbo, sub_font, getLangSTR(STORAGE), &col, &pen);
             // new line
             pen.x   = 26,
             pen.y  -= 32;

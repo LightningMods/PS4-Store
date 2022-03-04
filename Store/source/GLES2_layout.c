@@ -13,10 +13,11 @@
 
 #include "GLES2_common.h"
 #include "utils.h"
+#include "shaders.h"
 
 // store-clone / v2
 layout_t *left_panel2 = NULL;
-
+extern vec2 resolution;
 
 /* update field_size for layout: eventually reduce
    field_size to match remaining item count */
@@ -207,7 +208,9 @@ static void layout_compose_text(layout_t *l, int idx, vec2 *pen, bool save_text)
                 // 3 Sort_by uses default
                 if(l->page_sel.x == 3) // on Sot_by page
                 {
+                    
                     snprintf(&tmp[0], 63, format, new_panel_text[ 3 ][ idx ]);
+                    log_info("new_panel_text[ 3 ][ %i ], %s", idx, new_panel_text[3][idx]);
                     if( save_text )
                         snprintf(&selected_text[0], 63, "%s", tmp);
                 }
@@ -250,10 +253,10 @@ static void layout_compose_text(layout_t *l, int idx, vec2 *pen, bool save_text)
                 {   // to extend for more options
                     switch(idx)
                     {
-                        case STORE_USB_SETTING: snprintf(&tmp[0], 63, format, get->StoreOnUSB ? "True" : "False"); break;
-                        case HOME_MENU_SETTING: snprintf(&tmp[0], 63, format, get->HomeMenu_Redirection ? "ItemzFlow (ON)" : "Orbis (OFF)"); break;
-                        case USE_REFLECTION_SETTING: snprintf(&tmp[0], 63, format, use_reflection  ? "True" : "False"); break;
-                        case USE_PIXELSHADER_SETTING: snprintf(&tmp[0], 63, format, use_pixelshader ? "True" : "False"); break;
+                        case STORE_USB_SETTING: snprintf(&tmp[0], 63, format, get->StoreOnUSB ? getLangSTR(TRUE2) : getLangSTR(FALSE2)); break;
+                        case HOME_MENU_SETTING: snprintf(&tmp[0], 63, format, get->HomeMenu_Redirection ? getLangSTR(ON2) : getLangSTR(OFF2)); break;
+                        case SHOW_INSTALL_PROG: snprintf(&tmp[0], 63, format, get->Show_install_prog  ? getLangSTR(TRUE2) : getLangSTR(FALSE2)); break;
+                        case USE_PIXELSHADER_SETTING: snprintf(&tmp[0], 63, format, use_pixelshader ? getLangSTR(TRUE2) : getLangSTR(FALSE2)); break;
                         default: break;
                     }
                 }
@@ -358,6 +361,7 @@ void check_n_load_texture(const int idx)
 
     if( i->texture == 0 ) // try to load icon0
     {
+        loadmsg(getLangSTR(DL_CACHE));
         char *path = i->token_d[ PICPATH ].off,
              *url  = i->token_d[ IMAGE   ].off;
 #if 0 // on pc
@@ -530,6 +534,7 @@ void GLES2_render_layout_v2(layout_t *l, int unused)
                                                &l->item_d[ loop_idx ].uv);
 #endif
             }
+            sceMsgDialogTerminate();
             if(l == active_p)
             {   // add a border to the selection
                 r = frect_add_border(&selection_box, 9);
@@ -553,7 +558,9 @@ void GLES2_render_layout_v2(layout_t *l, int unused)
         }
         
         if(l == download_panel)
-        {   // uses cached frects, texture from atlas and UVs
+        {
+            
+            // uses cached frects, texture from atlas and UVs
             for(int i = 0; i < l->f_size; i++)
             {   // gles render the outline box
                 ORBIS_RenderDrawBox(USE_COLOR, &grey, &l->f_rect[ i ]);

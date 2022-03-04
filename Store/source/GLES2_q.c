@@ -24,7 +24,7 @@
 #include "defines.h"
 
 #include "GLES2_common.h"
-
+#include "shaders.h"
 #include <pthread.h>
 #include <stdatomic.h>
 //atomic_ulong g_progress = 0;
@@ -192,22 +192,22 @@ void GLES2_render_queue(layout_t *l, int used)
                     pen.y += 32;
                     switch(ta->status)
                     {
-                        case CANCELED:  snprintf(&tmp[0], 255, "Download Canceled");
+                        case CANCELED:  snprintf(&tmp[0], 255, getLangSTR(DL_CANCELLED));
                         break;
-                        case RUNNING:   snprintf(&tmp[0], 255, "Downloading");
+                        case RUNNING:   snprintf(&tmp[0], 255, getLangSTR(DOWNLOADING));
                         break;
                         case READY:
                         case COMPLETED: 
-                        snprintf(&tmp[0], 255, " Download Completed");
+                        snprintf(&tmp[0], 255, getLangSTR(DL_COMPLETE));
                         break;
                         default:  
-                        snprintf(&tmp[0], 255, " Download error: %i", ta->status);
+                        snprintf(&tmp[0], 255, " %s: %i", getLangSTR(DL_FAILED_W),ta->status);
                         break;
                     }
 
                     if (http_ret != 200 && http_ret != 0)
                     {
-                        log_debug( "? Download Failed with %i", http_ret);
+                        log_debug( "? %s %i", getLangSTR(DL_FAILED_W), http_ret);
                     }
 
                     // we need to know Text_Length_in_px in advance, so we call this:
@@ -281,6 +281,7 @@ void *start_routine2(void *argument)
 
     int ret = CANCELED;
     uint64_t total_read = 0;
+    int DL_SIZE = KB(8);
 
     log_info("i->url %s",   i->url);
     log_info("i->dst %s",   i->dst);
@@ -289,7 +290,14 @@ void *start_routine2(void *argument)
     log_info("i->token_d[ ID   ].off: %s", i->token_d[ ID   ].off);
     log_info("i->token_d[ SIZE ].off: %s", i->token_d[ SIZE ].off);
 
-    unsigned char buf[8000] = { 0 };
+    // if the pkg is over 100MBs download 10MBs at once
+    // instead of 1MBs, 1MB is default
+    if (i->contentLength > MB(100))
+        DL_SIZE = MB(10);
+   
+    uint64_t* buf = (uint64_t*)malloc(DL_SIZE);
+
+    if (buf == NULL) goto cleanup;
 
     unlink(i->dst);
 
@@ -299,14 +307,18 @@ void *start_routine2(void *argument)
 
     while (1)
     {
-        int read = sceHttpReadData(i->req, buf, sizeof(buf));
-        if (read <  0) { i->status = read; goto cleanup; }
-        if (read == 0) { i->status = CANCELED;   break; }
+        uint64_t read = sceHttpReadData(i->req, buf, DL_SIZE);
+        if (IS_ERROR(read)) { 
+            i->status = read; 
+            log_info("[StoreCore][HTTP] sceHttpReadData returned %x", read);  
+            goto cleanup;
+        }
 
-        ret = sceKernelWrite(fd, buf, read);
-        if (ret < 0 || ret != read)
+        uint64_t wr_rt = sceKernelWrite(fd, buf, read);
+        if (IS_ERROR(wr_rt))
         {
-            i->status = CANCELED;
+            log_info("[StoreCore][HTTP] sceKernelWrite returned %x", wr_rt);
+            i->status = wr_rt;
             goto cleanup;
         }
         total_read += read;
@@ -318,39 +330,44 @@ void *start_routine2(void *argument)
 
         if (i->progress >= 100.)
         {
+            log_info("[StoreCore][HTTP] Downloaded %s Successfully", i->dst);
             i->status = COMPLETED;
             break;
         }
 
         if(total_read %(4096*128) == 0)
-            log_debug( "%s, thread[%d] reading data, %lub / %lub (%.2f%%)", __FUNCTION__, i->idx, total_read, i->contentLength, i->progress);
+            log_debug( "[StoreCore][HTTP] thread[%d] reading data: %llub / %llub (%.2f%%)", i->idx, total_read, i->contentLength, i->progress);
     }
+
 
     // don't wait before returning
     // clean thread / reset
 cleanup:
+    log_info("[StoreCore][HTTP] Download Finished with status code: 0x%x", i->status);
+    free(buf);
+
     if (i->req > 0) {
         ret = sceHttpDeleteRequest(i->req);
         if (ret < 0) {
-            log_error("sceHttpDeleteRequest(%i) error: 0x%08X\n", i->req, ret);
+            log_error("[StoreCore][HTTP] sceHttpDeleteRequest(%i) error: 0x%08X\n", i->req, ret);
         }
     }
     if (i->connid > 0) {
         ret = sceHttpDeleteConnection(i->connid);
         if (ret < 0) {
-            log_error("sceHttpDeleteConnection(%i) error: 0x%08X\n", i->connid, ret);
+            log_error("[StoreCore][HTTP] sceHttpDeleteConnection(%i) error: 0x%08X\n", i->connid, ret);
         }
     }
     if (i->tmpid > 0) {
         ret = sceHttpDeleteTemplate(i->tmpid);
         if (ret < 0) {
-            log_error("sceHttpDeleteTemplate(%i) error: 0x%08X\n", i->tmpid, ret);
+            log_error("[StoreCore][HTTP] sceHttpDeleteTemplate(%i) error: 0x%08X\n", i->tmpid, ret);
         }
     }
     if (fd > 0) {
         ret = sceKernelClose(fd);
         if (ret < 0) {
-            log_error("sceKernelClose(%i) error: 0x%08X\n", fd, ret);
+            log_error("[StoreCore][HTTP] sceKernelClose(%i) error: 0x%08X\n", fd, ret);
         }
     }
 
@@ -359,7 +376,6 @@ cleanup:
 
     return ret;
 }
-
 int thread_find_by_item(int req_idx)
 {
     if( ! pt_info ) return -1;
@@ -457,12 +473,12 @@ int dl_from_url_v2(const char *url_, const char *dst_, item_idx_t *t)
     // thread Args
     int idx = thread_dispatch_index();
     
-    log_debug( "%s idx: %d", __FUNCTION__, idx);
+    log_debug( "[StoreCore][NET_OPS] %s idx: %d", __FUNCTION__, idx);
 
     if(idx < 0)
     {
         ani_notify("Full Queue, please wait!");
-//      log_debug( "no free slot to queue, please wait!");
+        log_debug( "no free slot to queue, please wait!");
         return 0;
     }
     // address pointer to thread args
@@ -486,12 +502,15 @@ int dl_from_url_v2(const char *url_, const char *dst_, item_idx_t *t)
 
         ret = pthread_create(&thread, NULL, start_routine2, ta);
 
-        log_debug( "%s: pthread_create[%d] for %s, ret:%d", __FUNCTION__, idx, url_, ret);
+        log_debug( "[StoreCore][NET_OPS] %s: pthread_create[%d] for %s, ret:%d", __FUNCTION__, idx, url_, ret);
+        if (ta->contentLength < MB(100))
+           ani_notify("Download thread start");
+        else
+           ani_notify("Super Speed Download started");
 
-        ani_notify("Download thread start");
     }
     else
-        msgok(NORMAL, "Download Failed with StatusCode: %i, URL: %s, DEST: %s", ret, url_, dst_);
+        msgok(WARNING, "[StoreCore][NET_OPS] %s: %i, URL: %s, DEST: %s", getLangSTR(DL_FAILED_W),ret, url_, dst_);
 
     log_debug( "icon_panel->item_d[%d]", ta->g_idx);
 

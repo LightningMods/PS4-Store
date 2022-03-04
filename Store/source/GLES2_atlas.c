@@ -10,7 +10,8 @@
 
 #include "defines.h"
 #include <semaphore.h> 
-#include <memory.h> // lmalloc()
+#include <user_mem.h> // lmalloc()
+#include "shaders.h"
 
 
 extern vec4 c[8];       // palette

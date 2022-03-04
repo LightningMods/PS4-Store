@@ -1,10 +1,12 @@
 #include "defines.h"
 #include <utils.h>
 #include <sys/signal.h>
+#include <dumper.h>
+#include <orbisGl.h>
 
 int libcmi = -1;
 
-//GlConfig* GlConf;
+OrbisGlConfig* GlConf;
 OrbisPadConfig *confPad;
 bool flag=true;
 
@@ -22,8 +24,6 @@ void updateController()
 {
     unsigned int buttons=0;
     int ret = orbisPadUpdate();
-
-    sceKernelUsleep(5000);
     if(ret==0)
     {
         if(orbisPadGetButtonPressed(ORBISPAD_L2|ORBISPAD_R2) || orbisPadGetButtonHold(ORBISPAD_L2|ORBISPAD_R2))
@@ -58,6 +58,7 @@ void updateController()
         if(orbisPadGetButtonPressed(ORBISPAD_UP)//) || orbisPadGetButtonHold(ORBISPAD_UP))
         || confPad->padDataCurrent->ly < (127 - DELTA))
         {
+            
             log_info( "Up pressed");
             GLES2_scene_on_pressed_button(111);
         }
@@ -129,6 +130,7 @@ void updateController()
         if (orbisPadGetButtonPressed(ORBISPAD_OPTIONS))
         {
             log_info("Exit Called");
+            //crash_test();
             raise(SIGQUIT);
         }
     }
@@ -188,8 +190,6 @@ bool initApp()
 #define WEN  (2048)
 unsigned int frame = 1,
 time_ms = 0;
-
-
 int main(int argc, char* argv[])
 {
 
@@ -218,6 +218,10 @@ int main(int argc, char* argv[])
     ret = sys_dynlib_dlsym(libcmi, "jailbreak_me", &jailbreak_me);
     if (!ret)
     {
+       // if (!sys_dynlib_dlsym(libcmi, "rejail_multi", &rejail_multi))
+           // log_info("rejail_multi resolved from PRX");
+
+
         log_info("jailbreak_me resolved from PRX");
 
         if ((ret = jailbreak_me() != 0)) goto error;
@@ -226,15 +230,10 @@ int main(int argc, char* argv[])
         goto error;
 
 
-    if (strstr(argv[0], "--reload_games") != NULL)
-    {
-        log_debug("arg[1] %s", argv[1]);
-        if ((ret = initGL_for_the_store(true, atoi(argv[1])) < 0)) goto error;
-        loadmsg("Loading Installed Apps");
-    }
-    else {
-        if ((ret = initGL_for_the_store(false, -1) < 0)) goto error;
-    }
+  
+    
+    if (initGL_for_the_store(false, -1) == INIT_FAILED) goto error;
+    
 
 
 
@@ -272,10 +271,16 @@ int main(int argc, char* argv[])
     t2 = t1;
 
 
+
+
+
     /// enter main render loop
     while (flag)
     {
-
+        //skip the first frame 
+        //so theres no race between 
+        //the countroller update func and the GLES UI
+        if (frame != 1)
             updateController();
 
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -290,13 +295,16 @@ int main(int argc, char* argv[])
             GLES2_scene_render();
 
             /// get timing, fps
-            if (!(frame % WEN))
+           if (!(frame % WEN))
             {
+                //StoreCore funcs
                 unsigned int now = get_time_ms();
-                log_info("frame: %d, took: %ums, fps: %.3f", frame, now - time_ms,
-                    ((double)WEN / (double)(now - time_ms) * 1000.f));
+                log_info("--------------------------------------------");
+                log_info("[StoreCore][FPS] frame: %d, took: %ums, fps: %.3f", frame, now - time_ms, ((double)WEN / (double)(now - time_ms) * 1000.f));
 
                 print_memory();
+                log_info("--------------------------------------------");
+
 
                 time_ms = now;
             }
@@ -317,13 +325,14 @@ int main(int argc, char* argv[])
 
 
             dump_frame();
-
+            //fallback in case a loading dialog is still running
+            if (sceMsgDialogUpdateStatus() == ORBIS_COMMON_DIALOG_STATUS_RUNNING)  sceMsgDialogTerminate();
         
     }
 
 error:
     sceKernelIccSetBuzzer(2);
-    msgok(FATAL, "App has Died with exit code %i", ret);
+    msgok(FATAL, "Returned %i", ret);
 
     // destructors
     ORBIS_RenderFillRects_fini();

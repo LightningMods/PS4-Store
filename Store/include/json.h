@@ -4,7 +4,7 @@
     2020, masterzorag
 */
 #pragma once
-
+#include "defines.h"
 typedef enum token_name
 {
     ID,
@@ -23,7 +23,8 @@ typedef enum token_name
     PV,
     MAIN_ICON_PATH,
     MAIN_MENU_PIC,
-    RELEASEDATE
+    RELEASEDATE,
+    TOTAL_NUM_OF_TOKENS,
     // should match NUM_OF_USER_TOKENS
 } token_name;
 
@@ -51,6 +52,14 @@ static const char *used_token[] =
 #define NUM_OF_USER_TOKENS  (sizeof(used_token) / sizeof(used_token[0]))
 
 // single item infos, for the page_info_t below
+
+typedef struct
+{
+    char* off;
+    char* buffer;
+    int   len;
+} item_idx_t;
+
 typedef struct
 {
     item_idx_t token  [NUM_OF_USER_TOKENS]; // indexed tokens from json_data
@@ -79,6 +88,7 @@ typedef struct
     // from 1, refrect json num in filename
     int page_num;
 } page_info_t;
+
 
 
 page_info_t *compose_page(int page_num);

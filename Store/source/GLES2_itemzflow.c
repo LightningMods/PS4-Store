@@ -11,9 +11,9 @@
 #include "defines.h"
 
 #include "GLES2_common.h"
-
-#include "sig_handler.h"
 #include "utils.h"
+#include "shaders.h"
+extern vec2 resolution;
 
 // ------------------------------------------------------- global variables ---
 // the Settings
@@ -53,135 +53,17 @@ enum Ops_for_cf
 struct retry_t   *cf_tex = NULL;
 
 // ------------------------------------------------------ freetype-gl shaders ---
-typedef struct { xyz position,
-                       normal;
-                 rgba   color;  } v3f3f4f_t;
-static GLuint CreateProgram1(void)
-{
-    const GLchar s_vertex_shader_code[] =
-       "precision mediump float; \
-        uniform mat4 model; \
-        uniform mat4 view; \
-        uniform mat4 projection; \
-        \
-        uniform   vec4 Color;  \
-        attribute vec3 vertex; \
-        attribute vec3 normal; \
-        attribute vec4 color;  \
-        \
-        varying   vec4 fragColor; \
-        varying   vec3 norm; \
-        \
-        void main() \
-        { \
-            fragColor   = color*Color; \
-            norm        = normal; \
-            gl_Position = projection*(view*(model*vec4(vertex,1.0))); \
-        }";
+typedef struct {
+    xyz position,
+        normal;
+    rgba   color;
+} v3f3f4f_t;
 
-    const GLchar s_fragment_shader_code[] =
-       "precision mediump float;  \
-        varying   vec4 fragColor; \
-        varying   vec3 norm; \
-        \
-        void main() \
-        { \
-                gl_FragColor = fragColor; \
-        }";
-
-    GLuint programID = BuildProgram(s_vertex_shader_code, s_fragment_shader_code);
-    // feedback
-    log_info( "TEST: program_id=%d (0x%08x)", programID, programID);
-    return programID;
-}
-
-typedef struct { xyz  position; 
-                 st     tex_uv;
-                 rgba    color;  } v3f2f4f_t;
-static GLuint CreateProgram2(void)
-{
-    const GLchar s_vertex_shader_code[] =
-       "precision mediump float; \
-        uniform mat4 model; \
-        uniform mat4 view; \
-        uniform mat4 projection; \
-        \
-        uniform   vec4 Color;  \
-        attribute vec3 vertex; \
-        attribute vec2 tex_coord; \
-        attribute vec4 color; \
-        \
-        varying vec2 vTexCoord; \
-        varying vec4 fragColor; \
-        \
-        void main() \
-        { \
-            vTexCoord.xy = tex_coord.xy; \
-            fragColor    = Color; \
-            gl_Position  = projection*(view*(model*vec4(vertex,1.0))); \
-        }";
-
-    const GLchar s_fragment_shader_code[] =
-       "precision mediump float; \
-        uniform sampler2D texture; \
-        \
-        varying vec2 vTexCoord; \
-        varying vec4 fragColor; \
-        \
-        void main() \
-        { \
-            gl_FragColor    = texture2D(texture, vTexCoord); \
-            gl_FragColor.a *= fragColor.a; \
-        }";
-
-    GLuint programID = BuildProgram(s_vertex_shader_code, s_fragment_shader_code);
-    // feedback
-    log_info( "TEST: program_id=%d (0x%08x)", programID, programID);
-    return programID;
-}
-
-// draws the reflection
-static GLuint CreateProgram3(void)
-{
-    const GLchar s_vertex_shader_code[] =
-       "precision mediump float; \
-        uniform mat4 model; \
-        uniform mat4 view; \
-        uniform mat4 projection; \
-        \
-        uniform   vec4 Color;  \
-        attribute vec3 vertex; \
-        attribute vec2 tex_coord; \
-        attribute vec4 color; \
-        \
-        varying vec2 vTexCoord; \
-        varying vec4 fragColor; \
-        \
-        void main() \
-        { \
-            vTexCoord.xy = tex_coord.xy; \
-            fragColor    = Color; \
-            gl_Position  = projection*(view*(model*vec4(vertex,1.0))); \
-        }";
-
-    const GLchar s_fragment_shader_code[] =
-       "precision mediump float; \
-        uniform sampler2D texture; \
-        \
-        varying vec2 vTexCoord; \
-        varying vec4 fragColor; \
-        \
-        void main() \
-        { \
-            gl_FragColor   = texture2D(texture, vTexCoord); \
-            gl_FragColor.a = sin(vTexCoord.y) * fragColor.a; \
-        }";
-
-    GLuint programID = BuildProgram(s_vertex_shader_code, s_fragment_shader_code);
-    // feedback
-    log_info( "TEST: program_id=%d (0x%08x)", programID, programID);
-    return programID;
-}
+typedef struct {
+    xyz  position;
+    st     tex_uv;
+    rgba    color;
+} v3f2f4f_t;
 
 vec4 c[8];
 
@@ -219,7 +101,7 @@ void vbo_add_from_rect(vertex_buffer_t *vbo, vec4 *rect)
     vec4   color = { 1, 0, 0, 1 };
     float r = color.r, g = color.g, b = color.b, a = color.a;
     /* VBO is setup as: "vertex:3f, color:4f */ 
-    v3fc4f_t vtx[4] = { { {rect->x, rect->y, 0},  {r,g,b,a} },
+    v3f2f4f_t  vtx[4] = { { {rect->x, rect->y, 0},  {r,g,b,a} },
                         { {rect->x, rect->w, 0},  {r,g,b,a} },
                         { {rect->z, rect->w, 0},  {r,g,b,a} },
                         { {rect->z, rect->y, 0},  {r,g,b,a} } };
@@ -365,13 +247,8 @@ void InitScene_5(int width, int height)
     }
 
     if(!cb_tex) // fallback, one texture fits all
-    {
-        if (!if_exists("/mnt/sandbox/NPXS39041_000/app0/assets/aaa.png"))  
-            cb_tex = load_png_asset_into_texture("/user/app/NPXS39041/storedata/aaa.png");
-        else
-            cb_tex = load_png_asset_into_texture("/mnt/sandbox/NPXS39041_000/app0/assets/aaa.png");
+       cb_tex = load_png_data_into_texture(cover_temp, cover_temp_length);
 
-    }
     // the fullscreen image
  
     if (!bg_tex)
@@ -389,12 +266,14 @@ void InitScene_5(int width, int height)
 }
 
 // ------------------------------------------------------------------- init ---
+
+
 void InitScene_4(int width, int height)
 {
     // compile, link and use custom shaders
-    sh_prog1 = CreateProgram1();
-    sh_prog2 = CreateProgram2();
-    sh_prog3 = CreateProgram3();
+    sh_prog1 = BuildProgram(coverflow_vs0, coverflow_fs0, coverflow_vs0_length, coverflow_fs0_length);
+    sh_prog2 = BuildProgram(coverflow_vs1, coverflow_fs1, coverflow_vs1_length, coverflow_fs1_length);
+    sh_prog3 = BuildProgram(coverflow_vs2, coverflow_fs2, coverflow_vs1_length, coverflow_fs2_length);
 
     mat4_set_identity( &projection );
     mat4_set_identity( &model );
@@ -533,7 +412,7 @@ static void download_texture(int idx)
         snprintf(cb_path, 255, "/user/app/NPXS39041/covers/%s.png", id);
         log_info("Trying to Download cover for %s", id);
 
-        loadmsg("Trying to Download cover for %s", id);
+        loadmsg("%s %s", getLangSTR( DL_COVERS),id);
 
         if (!if_exists(cb_path)) // download
         {
@@ -709,17 +588,26 @@ static void X_action_dispatch(int action, layout_t *l)
     {
         case Dump_Game_opt:
         {
-            
-            if (strstr(usbpath(), "/mnt/usb") == NULL)
+            if (strstr(usbpath(), "/mnt/usb") != NULL)
             {
-                msgok(WARNING, "No USB Detected, Exiting...");
+                if (check_free_space(usbpath()) >= app_inst_util_get_size(title_id)) {
+                    log_info("Enough free space");         
+                    msgok(NORMAL, getLangSTR(DUMP));
+                    dump = true;
+                    Launch_App(title_id, true);
+                    break;
+                }
+                else
+                {
+                    log_info("NOT Enough free space");
+                    msgok(WARNING, "\n\n%s %s %s: NOT_ENOUGH_FREE_SPACE\n\nUSB: %i GBs\n%s: %i GBs", getLangSTR(DUMP_OF),title_id,getLangSTR(FAILED_W_CODE), check_free_space(usbpath()), title_id, app_inst_util_get_size(title_id));
+                    break;
+                }
+            }
+            else {
+                msgok(WARNING, getLangSTR(NO_USB));
                 break;
             }
-            else
-                dump = true;
-
-
-            msgok(NORMAL, "AFTER the Game launches when you press OK wait few seconds then go back to the Store\n\nand the game will be begin dumping DO NOT CLOSE THE GAME OR STORE UNTIL THE DUMP IS COMPLETE");
         }
         case Launch_Game_opt: {
             Launch_App(title_id, false);
@@ -728,9 +616,9 @@ static void X_action_dispatch(int action, layout_t *l)
         case Uninstall_Update_opt: {
 
             if (app_inst_util_uninstall_patch(title_id, &error) && error == 0)
-                msgok(NORMAL, "Game Update Uninstalled successfully");
+                msgok(NORMAL, getLangSTR(UNINSTALL_UPDATE));
             else
-                msgok(WARNING, "Game Update Uninstall failed with code: 0x%X (%i)", error, error);
+                msgok(WARNING, "%s: 0x%X (%i)", getLangSTR(UNINSTAL_UPDATE_FAILED),error, error);
             break;
         }
 
@@ -738,20 +626,20 @@ static void X_action_dispatch(int action, layout_t *l)
 
             if (app_inst_util_uninstall_game(title_id, &error) && error == 0)
             {
-                msgok(NORMAL, "Game Uninstalled successfully, the installed App list will now reload");
+                msgok(NORMAL, getLangSTR(UNINSTALL_SUCCESS));
 
                 fw_action_to_cf(0x1337);
-                refresh_apps_for_cf();
+                refresh_apps_for_cf(SORT_NA);
             }
             else
-                msgok(WARNING, "Game Uninstall failed with code: %x (%i)", error, error);
+                msgok(WARNING, "%s: %x (%i)", getLangSTR(UNINSTALL_FAILED),error, error);
 
             break;
         }
 
         case Trainers_opt: {
             log_info("NOT IMPLMENTED!!!!");
-            msgok(NORMAL, "Coming soon:tm:");
+            msgok(NORMAL, getLangSTR(COMING_SOON));
 
             break;
         }
@@ -783,8 +671,8 @@ void fw_action_to_cf(int button)
                        v2 = set_view(ITEM_PAGE);  break; // in_out
             case TRI: {  //REFRESH APP
                 //tell the user
-                msgok(NORMAL, "The Installed Apps list will now Reload");
-                refresh_apps_for_cf(); 
+                msgok(NORMAL, getLangSTR(RELOAD_LIST));
+                refresh_apps_for_cf(SORT_ALPHABET); 
                 //go back to main menu
                 goto refresh_apps;
                     break;
@@ -845,8 +733,11 @@ void draw_additions(void)
             btn_X = load_png_asset_into_texture("/user/app/NPXS39041/storedata/btn_X.png");
         else
             btn_X = load_png_asset_into_texture("/mnt/sandbox/NPXS39041_000/app0/assets/btn_X.png");
+
+        //fallback
+        if (btn_X == 0) btn_X = -1;
     }
-    else
+    else if (btn_X > 0)
     {
         vec4 r;
         vec2
@@ -1049,12 +940,12 @@ draw_item:
             tex_idx -= all_apps[0].token_c;
         
 
-        if (all_apps[0].token_c < 4) msgok(FATAL, "This Game Launcher has a Requirement of min. 4 Apps\nTo use it you need to install: %i More apps\n", 4 - all_apps[0].token_c);
+        if (all_apps[0].token_c < 4) msgok(FATAL, "%s %i More apps\n", getLangSTR(APP_REQ),4 - all_apps[0].token_c);
 
         
         if (Download_icons)
         { 
-            loadmsg("Downloading Covers from the server");
+            loadmsg(getLangSTR(DOWNLOADING_COVERS));
             
            for (int i = 1; i < all_apps[0].token_c + 1; i++)
                 download_texture(i);
@@ -1097,14 +988,14 @@ draw_item:
             size_t len = strlen(li->token_d[NAME].off);
             if (len < 30)
             {
-                if (tex_idx <= HDD_count)
+                if (!li->is_ext_hdd)
                     strcpy(&tmp[0], li->token_d[NAME].off);
                 else
                     snprintf(&tmp[0], 127, "%s (Ext. HDD)", li->token_d[NAME].off);
             }
             else
             {
-                if (tex_idx <= HDD_count)
+                if (!li->is_ext_hdd)
                    snprintf(&tmp[0], 127, "%.26s...", li->token_d[NAME].off);
                 else
                     snprintf(&tmp[0], 127, "%.26s... (Ext. HDD)", li->token_d[NAME].off);
@@ -1119,7 +1010,14 @@ draw_item:
             vec2 pen = (vec2) { (resolution.x - tl) /2., (resolution.y /10.) *2. };
             //Game Options Pen
             vec2 pen_game_options = (vec2){ 100., resolution.y - 150. };
-            
+#if BETA==1
+            vec2 beta_built = (vec2){ (resolution.x - tl) / 2., (resolution.y / 5.) * 2. };
+            add_text(title_vbo, titl_font, "BETA Build Watermark", &col, &beta_built);
+#endif
+
+           /// vec2 beta_built = (vec2){  / 2., (resolution.y / 5.) * 2. };
+            //add_text(title_vbo, titl_font, "BETA Build Watermark", &col, &beta_built);
+
             if (v_curr == ITEM_PAGE)
               add_text( title_vbo, titl_font, &tmp[0], &col, &pen_game_options);
             else // fill the vbo
@@ -1135,7 +1033,7 @@ draw_item:
               // Default for ITEMzFlow enum
               pen.x  = (resolution.x - tl) /2.,
               pen.y -= 32;
-              
+             
               if (v_curr == ITEM_PAGE){
                 pen_game_options.x  += 10.;
                 // fill the vbo
@@ -1191,13 +1089,3 @@ all_drawn:
 
     pr_dbg = 0;
 }
-
-const char *gm_p_text[] =
-{
-    "Launch game",
-    "Dump game",
-    "Uninstall update",
-    "Uninstall game",
-    "Trainers"
-};
-

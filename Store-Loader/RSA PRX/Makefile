@@ -18,7 +18,7 @@ ifeq ($(UNAME_S),Darwin)
 		CDIR	:= macos
 endif
 ODIR 		:= $(INTDIR)
-SDIR 		:= $(PROJDIR)
+SDIR 		:= RSA
 IDIRS 		:= -I$(TOOLCHAIN)/include
 LDIRS 		:= -L$(TOOLCHAIN)/lib
 CFLAGS 		:= -cc1 -triple x86_64-scei-ps4-elf -munwind-tables $(IDIRS) -emit-obj

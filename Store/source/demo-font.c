@@ -66,6 +66,7 @@
 
 
 #include "defines.h"
+#include "shaders.h"
 
 // ------------------------------------------------------- typedef & struct ---
 typedef struct {
@@ -223,47 +224,12 @@ static void my_add_text( vertex_buffer_t * buffer, texture_font_t * font,
 static GLuint CreateProgram( void )
 {
     GLuint programID = 0;
-
-    const GLchar s_vertex_shader_code[] =
-       "precision mediump float; \
-        uniform mat4 model; \
-        uniform mat4 view; \
-        uniform mat4 projection; \
-        \
-        attribute vec3 vertex; \
-        attribute vec2 tex_coord; \
-        attribute vec4 color; \
-        \
-        varying vec2 vTexCoord; \
-        varying vec4 fragColor; \
-        \
-        void main() \
-        { \
-            vTexCoord.xy = tex_coord.xy; \
-            fragColor    = color; \
-            gl_Position  = projection*(view*(model*vec4(vertex,1.0))); \
-        }";
-        
-    const GLchar s_fragment_shader_code[] =
-       "precision mediump float; \
-        uniform sampler2D texture; \
-        \
-        varying vec2 vTexCoord; \
-        varying vec4 fragColor; \
-        \
-        void main() \
-        { \
-            float a = texture2D(texture, vTexCoord).a; \
-            gl_FragColor = vec4(fragColor.rgb, fragColor.a*a); \
-        }";
-
     /* we can use OrbisGl wrappers, or MiniAPI ones */
-
     /* else,
        include and links against MiniAPI library!
     programID = miniCompileShaders(s_vertex_shader_code, s_fragment_shader_code);
     */
-    programID = BuildProgram(s_vertex_shader_code, s_fragment_shader_code);
+    programID = BuildProgram(font_vs, font_fs, font_vs_length, font_fs_length);
 
     // feedback
     log_info( "program_id=%d (0x%08x)", programID, programID);
@@ -298,7 +264,7 @@ int es2init_text (int width, int height)
 //    vec4 col   = { 1.f, 0.f, 0.4, 1.f }; // RGBA color
 
 
-    font = texture_font_new_from_memory(atlas, 24, _hostapp_fonts_zrnic_rg_ttf, _hostapp_fonts_zrnic_rg_ttf_len);
+    font = texture_font_new_from_memory(atlas, 24, font_ttf, font_len);
 
 
     // 1.
@@ -355,7 +321,7 @@ int es2init_text (int width, int height)
     for( h=16; h < 24; h += 2)
     {
 
-        font = texture_font_new_from_memory(atlas, h, _hostapp_fonts_zrnic_rg_ttf, _hostapp_fonts_zrnic_rg_ttf_len);
+        font = texture_font_new_from_memory(atlas, h, font_ttf, font_len);
         pen.x  = tx;
         pen.y -= font->height;  // reset pen, 1 line down
 
@@ -380,7 +346,7 @@ int es2init_text (int width, int height)
     // compile, link and use shader
     shader = CreateProgram();
                                   
-    if(!shader) { msgok(FATAL, "Program Failed with exit_code %x", shader); }
+    if(!shader) { msgok(FATAL, "%s %x", getLangSTR(FAILED_W_CODE),shader); }
 
     mat4_set_identity( &projection );
     mat4_set_identity( &model );

@@ -11,12 +11,13 @@
 #include "Header.h"
 #include <ps4sdk.h>
 #include <errno.h>
+#include "lang.h"
+#include "ini.h"
 
 int ret;
 int libnetMemId = 0;
 int libsslCtxId = 0;
 int libhttpCtxId = 0;
-int secure_boot = false;
 
 struct revocation_list {
 	char version[50];
@@ -155,26 +156,46 @@ int MD5_hash_compare(const char* file1, const char* file2)
 }
 
 
+bool if_exists(const char* path)
+{
+	int dfd = open(path, O_RDONLY, 0); // try to open dir
+	if (dfd < 0) {
+		logshit("path %s, errno %s", path, strerror(errno));
+		return false;
+	}
+	else
+		close(dfd);
 
-int update_version_by_hash(char* path)
+	return true;
+}
+
+
+
+bool update_version_by_hash(char* path)
 {
 	bool failed = false;
     int fd = sceKernelOpen(path, 0, 0);
-    if (fd <= 0) {
-    	return 2;
+	if (fd <= 0) {
+		logshit("Cant open %s\n", path);
+		return false;
 	}
-
+	
 	// Get the Update into mem
 	int size = sceKernelLseek(fd, 0, SEEK_END);
 	sceKernelLseek(fd, 0, SEEK_SET);
 
 	void* buffer = NULL;
 	int ret = sceKernelMmap(0, size, PROT_READ, MAP_PRIVATE, fd, 0, &buffer);
+	if (ret < 0)
+		logshit("MMAP Error: %s\n", strerror(errno));
+
 	sceKernelClose(fd);
 
 	if (buffer == NULL) {
-		return 3;
+		logshit("buffer is null\n");
+		return false;
 	}
+	
 
 	// Create MD5 hash
 	MD5_CTX ctx;
@@ -194,88 +215,106 @@ int update_version_by_hash(char* path)
 	for (int y = 0; y < (sizeof(revoke_list) / sizeof(revoke_list[0])); y++) {
 
 	     logshit("Update Hash: %s, current checked revoked hash: %s\n", md5_string, revoke_list[y].hash);
-
          if (strcmp(md5_string, revoke_list[y].hash) == 0) {
 			logshit("------- Update IS revoked ---------\n");
-			return 1;
+			return false;
 		}
 
 	}
 
 	sceKernelMunmap(buffer, size);
 
-	return 0;
+	return true;
 }
 
 
-int checkForUpdate(char *cdnbuf)
-{       int UpdateRet = -1;
-	    int fd = sceKernelOpen("/user/app/NPXS39041/homebrew.elf", 0x0000, 0x0000);
-        UpdateRet = sceKernelOpen("/user/app/NPXS39041/local.md5", 0x0000, 0x0000);
-        unlink("/user/app/NPXS39041/homebrew.elf.sig");
+bool checkForUpdate(char *cdnbuf)
+{
+    unlink("/user/app/NPXS39041/homebrew.elf.sig");
 
-	logshit("[STORE_GL_Loader:%s:%i] ----- ELF fd = %i---\n", __FUNCTION__, __LINE__, fd);
-	if (fd > 0 && UpdateRet > 0)
-	{   
-                close(fd);
-                close(UpdateRet);
+	if (if_exists("/user/app/NPXS39041/homebrew.elf") && if_exists("/user/app/NPXS39041/local.md5"))
+	{
+		logshit("[STORE_GL_Loader:%s:%i] ----- ELF exists ---\n", __FUNCTION__, __LINE__);
 		logshit("[STORE_GL_Loader:%s:%i] ----- Comparing Hashs ---\n", __FUNCTION__, __LINE__);
 		int comp = MD5_hash_compare("/user/app/NPXS39041/remote.md5", "/user/app/NPXS39041/local.md5");
 		if (comp == DIFFERENT_HASH)
-		{
-			
-         
-			goto copy_update;
-		}
-		else
+             goto copy_update;
+        else
 		{
 			logshit("[STORE_GL_Loader:%s:%i] ----- HASHS ARE THE SAME ---\n", __FUNCTION__, __LINE__);
-			return 0;
+			return true;
 		}
 	}
 	else
-	{
-               
-		goto copy_update;
-	}
+      goto copy_update;
+	
 
 copy_update:
-msgok("Update Required\n");
-	loadmsg("Downloading Update File...");
+    msgok(getLangSTR(UPDATE_REQ));
+	loadmsg(getLangSTR(DOWNLOADING_UPDATE));
 	unlink("/user/app/NPXS39041/homebrew.elf");
-        unlink("/user/app/NPXS39041/local.md5");
+    unlink("/user/app/NPXS39041/local.md5");
         
      if(download_file(libnetMemId, libhttpCtxId, cdnbuf, "/user/app/NPXS39041/homebrew.elf") == 200)
      {
-
-	UpdateRet = copyFile("/user/app/NPXS39041/remote.md5", "/user/app/NPXS39041/local.md5");
-	if (UpdateRet != 0)
-	{
-		return -1;
-	}
-	else
-	{   unlink("/user/app/NPXS39041/remote.md5");
-		msgok("Update Has been Applied\n");
-                close(UpdateRet);
-		return 0;
-	}
+	     if (copyFile("/user/app/NPXS39041/remote.md5", "/user/app/NPXS39041/local.md5") != 0)
+			 return false;
+	     else{  
+		   unlink("/user/app/NPXS39041/remote.md5");
+		   msgok(getLangSTR(UPDATE_APPLIED));
+		   return true;
+		 }
      }
      else
-		return -1;
+		return false;
 }
 
+static int print_ini_info(void* user, const char* section, const char* name,
+	const char* value)
+{
+	static char prev_section[50] = "";
 
+	if (strcmp(section, prev_section)) {
+		logshit("%s[%s]\n", (prev_section[0] ? "\n" : ""), section);
+		strncpy(prev_section, section, sizeof(prev_section));
+		prev_section[sizeof(prev_section) - 1] = '\0';
+	}
+	logshit("%s = %s\n", name, value);
 
+	StoreLoaderOptions* pconfig = (StoreLoaderOptions*)user;
 
+#define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
+
+	if (MATCH("Settings", "Secure_Boot")) {
+		pconfig->SECURE_BOOT = atoi(value);
+	}
+	else if (MATCH("Settings", "CDN")) {
+		pconfig->opt[CDN_URL] = strdup(value);
+	}
+	else if (MATCH("Settings", "Copy_INI")) {
+		pconfig->Copy_INI = atoi(value);
+	}
+
+	return 1;
+}
+
+static bool touch_file(char* destfile)
+{
+	int fd = open(destfile, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+	if (fd > 0) {
+		close(fd);
+		return true;
+	}
+	else
+		return false;
+}
 
 int main()
 {
 
 	init_STOREGL_modules();
 
-	int libjb = -1, librsa = -1, advanced_settings = 0, dl_ret = 0;
-    char Devkit_M[250];
-	char cdninpute[255];
+	int libjb = -1, librsa = -1, dl_ret = 0;
 	char cdnbuf[255];
 
 	sceSystemServiceHideSplashScreen();
@@ -304,41 +343,48 @@ int main()
 	libhttpCtxId = ret;
 
 
+	if (!LoadLangs(PS4GetLang())) {
+		if (!LoadLangs(0x01)) {
+			msgok("Failed to load Backup Lang...\nThe App is unable to continue"); 
+			goto exit_sec;
+		}
+		else
+			logshit("Loaded the backup, lang %i failed to load", PS4GetLang());
+	}
 
-        sys_dynlib_load_prx("/app0/Media/rsa.sprx", &librsa);
-        sys_dynlib_load_prx("/app0/Media/jb.prx", &libjb);
+     sys_dynlib_load_prx("/app0/Media/rsa.sprx", &librsa);
+     sys_dynlib_load_prx("/app0/Media/jb.prx", &libjb);
 
-        ret = sys_dynlib_dlsym(libjb, "jailbreak_me", &jailbreak_me);
-        if (!ret)
-        {
+     if (!sys_dynlib_dlsym(libjb, "jailbreak_me", &jailbreak_me))
+     {
           logshit("jailbreak_me resolved from PRX\n");
    
-            if(jailbreak_me() != 0){
-              msgok("FATAL Jailbreak failed with code: %x\n", ret); goto exit_sec;
+            if((ret = jailbreak_me()) != 0){//
+				msgok("%s: %x\n", getLangSTR(FATAL_JB), ret); goto exit_sec;
             }
-            else printf("jailbreak_me() returned %i\n", ret);
-        }
-        else{
-          msgok("FATAL Jailbreak failed with code: %x\n", ret); goto exit_sec;}
+            else 
+				printf("jailbreak_me() returned %i\n", ret);
+     }
+     else{
+        msgok("%s: %x\n", getLangSTR(FATAL_JB),ret); goto exit_sec;
+	 }
 
-
-		ret = sys_dynlib_dlsym(libjb, "rejail_multi", &rejail_multi);
-		if (!ret)
-		   logshit("rejail_multi resolved from PRX\n");
-		else {
-			msgok("FATAL rejail_multi failed with code: %x\n", ret); goto exit_sec;
-		}
+	 if (!sys_dynlib_dlsym(libjb, "rejail_multi", &rejail_multi))
+	     logshit("rejail_multi resolved from PRX\n");
+	 else {
+		msgok("%s: %x\n", getLangSTR(FATAL_REJAIL),ret); goto exit_sec;
+	 }
 		
 
 
-	if (!ret)
+	if (jailbreak_me != NULL && rejail_multi != NULL)
 	{
 		logshit("After jb\n");
+		mkdir("/user/app/NPXS39041/", 0777);
 		mkdir("/user/app/NPXS39041/storedata/", 0777);
 		mkdir("/user/app/NPXS39041/logs/", 0777);
 		unlink("/user/app/NPXS39041/logs/loader.log");
-		mkdir("/user/app/NPXS39041/", 0777);
-
+		StoreLoaderOptions config;
 		
 
 		logshit("[STORE_GL_Loader:%s:%i] -----  All Internal Modules Loaded  -----\n", __FUNCTION__, __LINE__);
@@ -346,236 +392,127 @@ int main()
 		logshit("[STORE_GL_Loader:%s:%i] -----  STORE Version: %s  -----\n", __FUNCTION__, __LINE__, completeVersion);
 		logshit("----------------------------------------------- -------------------------\n");
 
-		pl_ini_file init;
+		config.opt[CDN_URL] = "http://api.pkg-zone.com";
+		config.SECURE_BOOT = true;
+		config.Copy_INI = false;
 
-        int fd = sceKernelOpen("/mnt/usb0/settings.ini", 0x0000, 0);
- 		if (fd > 0)
+ 		if (if_exists("/mnt/usb0/settings.ini"))
 		{
 			logshit("[STORE_GL_Loader:%s:%i] ----- FOUND USB RECOVERY INI ---\n", __FUNCTION__, __LINE__);
 
-			pl_ini_load(&init, "/mnt/usb0/settings.ini");
+			int error = ini_parse("/mnt/usb0/settings.ini", print_ini_info, &config);
+			if (error) {
+				printf("Bad config file (first error on line %d)!\n", error);
+			}
+			else {
 
-			pl_ini_get_string(&init, "Settings", "CDN", "http://api.pkg-zone.com", cdninpute, 255);
+				if (config.Copy_INI)
+					copyFile("/mnt/usb0/settings.ini", "/user/app/NPXS39041/settings.ini");
+			}
 
-		    secure_boot = pl_ini_get_int(&init, "Settings", "Secure_boot", 1);
-
-
-            if(pl_ini_get_int(&init, "Settings", "Copy_INI", 0))
-				copyFile("/mnt/usb0/settings.ini", "/user/app/NPXS39041/settings.ini");
-
-
-			logshit("[STORE_GL_Loader:%s:%i] ----- USB INI CDN: %s Secure Boot: %i ---\n", __FUNCTION__, __LINE__, cdninpute, secure_boot);
-			
+			logshit("[STORE_GL_Loader:%s:%i] ----- USB INI CDN: %s Secure Boot: %i ---\n", __FUNCTION__, __LINE__, config.opt[CDN_URL], config.SECURE_BOOT);
 		} 
         else
         {
-			
-		fd = sceKernelOpen("/user/app/NPXS39041/settings.ini", 0x0000, 0);
-		if (fd < 0)
-		{
-
+		    if (!if_exists("/user/app/NPXS39041/settings.ini"))
+		    {
 				logshit("[STORE_GL_Loader:%s:%i] ----- APP INI Not Found, Making ini ---\n", __FUNCTION__, __LINE__);
-                
-                pl_ini_file file;
-			    pl_ini_create(&file);
-			    pl_ini_set_string(&file, "Settings", "CDN", "http://api.pkg-zone.com");
-			    pl_ini_set_int(&file, "Settings", "Secure_boot", 1);
-			    pl_ini_set_string(&file, "Settings", "temppath", "/user/app");
-			    pl_ini_set_int(&file, "Settings", "StoreOnUSB", 0);
-			    pl_ini_save(&file, "/user/app/NPXS39041/settings.ini");
 
-				snprintf(cdninpute, 255, "http://api.pkg-zone.com");
+				char* buff[1024];
+				memset(buff, 0, 1024);
+				snprintf(buff, 1023, "[Settings]\nCDN=http://api.pkg-zone.com\nSecure_Boot=1\ntemppath=/user/app/NPXS39041/downloads\nStoreOnUSB=0\nShow_install_prog=1\nHomeMenu_Redirection=0\nDaemon_on_start=1\nLegacy=0\n");
 
-				secure_boot = true;
+				int fd = open("/user/app/NPXS39041/settings.ini", O_WRONLY | O_CREAT | O_TRUNC, 0777);
+				if (fd >= 0)
+				{
+					write(fd, buff, strlen(buff));
+					close(fd);
+				}
+				else
+					logshit("Could not make create INI File");
 
-		}
-					
-		else
-		{
+				mkdir("/user/app/NPXS39041/downloads", 0777);
+				config.SECURE_BOOT = true;
+
+		    }			
+		    else
+		    {
 				logshit("[STORE_GL_Loader:%s:%i] ----- INI FOUND ---\n", __FUNCTION__, __LINE__);
-
-				pl_ini_load(&init, "/user/app/NPXS39041/settings.ini");
-
-				pl_ini_get_string(&init, "Settings", "CDN", "http://api.pkg-zone.com", cdninpute, 255);
-
-				secure_boot = pl_ini_get_int(&init, "Settings", "Secure_boot", 1);
-
-				advanced_settings = pl_ini_get_int(&init, "Settings", "Advanced_enabled", 0);
-				if (advanced_settings)
-				    pl_ini_get_string(&init, "Settings", "CDN_For_Devkit_Modules", "http://api.pkg-zone.com/", Devkit_M, 255);
-				
-
-
-
-		}
+				int error = ini_parse("/user/app/NPXS39041/settings.ini", print_ini_info, &config);
+				if (error) {
+					printf("Bad config file (first error on line %d)!\n", error);
+				}
+		    }
            
       }
 		
-#if IS_INTERNAL == 1
-		snprintf(cdninpute, 254, "http://192.168.123.178");
-#endif
 
 
 	start:
 
-		logshit("[STORE_GL_Loader:%s:%i] ----- CDN Url = %s ---\n", __FUNCTION__, __LINE__, cdninpute);
+		logshit("[STORE_GL_Loader:%s:%i] ----- CDN Url = %s ---\n", __FUNCTION__, __LINE__, config.opt[CDN_URL]);
 
-		ret = pingtest(libnetMemId, libhttpCtxId, cdninpute);
+		ret = pingtest(libnetMemId, libhttpCtxId, config.opt[CDN_URL]);
 		if (ret != 0)
-			msgok("Connection to the CDN Failed with %x\n", ret);
+			msgok("%s: 0x%x\n",getLangSTR(PING_FAILED), ret);
 		else if (ret == 0)
 		{
 			logshit("[STORE_GL_Loader:%s:%i] ----- Ping Successfully ---\n", __FUNCTION__, __LINE__);
 
-
-#if IS_INTERNAL == 1
-			int dl_ret = download_file(libnetMemId, libhttpCtxId, cdnbuf, "/data/homebrew.elf.new");
-#else
-			snprintf(cdnbuf, 254, "%s/update/remote.md5", cdninpute);
-
-			dl_ret = download_file(libnetMemId, libhttpCtxId, cdnbuf, "/user/app/NPXS39041/remote.md5");
-			if (dl_ret != 200)
-				goto err;
-
-
-			fd = sceKernelOpen("/user/app/NPXS39041/pig.sprx", 0x0000, 0);
-			if (fd < 0)
-			{
-				loadmsg("Downloading Devkit Modules...\n");
-				logshit("[STORE_GL_Loader:%s:%i] ----- Piglet NOT Found Downloading.... ---\n", __FUNCTION__, __LINE__);
-
-				if (advanced_settings != 0)
-					snprintf(cdnbuf, 255, "%s/pig.sprx", Devkit_M);
-				else
-					snprintf(cdnbuf, 255, "%s/pig.sprx", cdninpute);
-
-				dl_ret = download_file(libnetMemId, libhttpCtxId, cdnbuf, "/user/app/NPXS39041/pig.sprx");
-				if (dl_ret != 200)
-					goto err;
-			}
-			else
-				logshit("[STORE_GL_Loader:%s:%i] ----- Piglet already downloaded ---\n", __FUNCTION__, __LINE__);
-
-			fd = sceKernelOpen("/user/app/NPXS39041/shacc.sprx", 0x0000, 0);
-			if (fd < 0)
-			{
-				logshit("[STORE_GL_Loader:%s:%i] ----- Shacc NOT Found Downloading.... ---\n", __FUNCTION__, __LINE__);
-
-				if (advanced_settings != 0)
-					snprintf(cdnbuf, 255, "%s/shacc.sprx", Devkit_M);
-				else
-					snprintf(cdnbuf, 255, "%s/shacc.sprx", cdninpute);
-
-				dl_ret = download_file(libnetMemId, libhttpCtxId, cdnbuf, "/user/app/NPXS39041/shacc.sprx");
-
-				if (dl_ret != 200)
-					goto err;
-			}
-			else
-				logshit("[STORE_GL_Loader:%s:%i] ----- Shacc already downloaded ---\n", __FUNCTION__, __LINE__);
+			snprintf(cdnbuf, 254, "%s/update/remote.md5", config.opt[CDN_URL]);
 
 			sceMsgDialogTerminate();
 
-#endif
+			if ((dl_ret = download_file(libnetMemId, libhttpCtxId, cdnbuf, "/user/app/NPXS39041/remote.md5")) == 200){
 
-			logshit("[STORE_GL_Loader:%s:%i] ----- dl_ret = %i ---\n", __FUNCTION__, __LINE__, dl_ret);
-
-			if (dl_ret != 200)
-			{
-				logshit("[STORE_GL_Loader:%s:%i] ----- dl_ret = %i ---\n", __FUNCTION__, __LINE__, dl_ret);
-				int usb_fd = -1;
-				while (usb_fd < 0)
-				{
-					msgok("CDN Invaild\n\n CDN Url = %s\n\n Error = %i\n\n provide a new settings.ini file via USB root with a correct CDN", cdninpute, dl_ret);
-
-					usb_fd = sceKernelOpen("/mnt/usb0/settings.ini", O_RDONLY, O_RDONLY);
-					if (usb_fd > 0)
-					{
-						pl_ini_load(&init, "/mnt/usb0/settings.ini");
-
-						pl_ini_get_string(&init, "Settings", "CDN", "N/A", cdninpute, 255);
-
-						if (strstr(cdninpute, "N/A") != NULL)
-						{
-							msgok("the CDN URL on the settings.ini file is INVAILD \n insert a settings file with a VAILD CDN");
-
-							usb_fd = -1;
-						}
-						else if (strstr(cdninpute, "N/A") == NULL)
-						{
-							goto start;
-						}
-					}
-
-					sleep(1);
-				}
-			}
-
-			else
-			{
-
-				if (true)
+				if (!sys_dynlib_dlsym(librsa, "VerifyRSA", &VerifyRSA) && VerifyRSA != NULL)
 				{
 					logshit("[STORE_GL_Loader:%s:%i] ----- CheckForUpdate() ---\n", __FUNCTION__, __LINE__);
 
-					snprintf(cdnbuf, 254, "%s/update/homebrew.elf", cdninpute);
-					if (checkForUpdate(cdnbuf) == 0)
+					snprintf(cdnbuf, 254, "%s/update/homebrew.elf", config.opt[CDN_URL]);
+					if (checkForUpdate(cdnbuf))
 					{
 						mkdir("/data/self", 0777);
 						unlink("/data/self/eboot.bin");
 
-						if (secure_boot)
+						if (config.SECURE_BOOT)
 						{
-							snprintf(cdnbuf, 254, "%s/update/homebrew.elf.sig", cdninpute);
+							snprintf(cdnbuf, 254, "%s/update/homebrew.elf.sig", config.opt[CDN_URL]);
 							logshit("[STORE_GL_Loader:%s:%i] ----- Secure Boot is ENABLED ---\n", __FUNCTION__, __LINE__);
-
 							logshit("[STORE_GL_Loader:%s:%i] ----- Checking Revocation list..... ---\n", __FUNCTION__, __LINE__);
 
-							if (update_version_by_hash("/user/app/NPXS39041/homebrew.elf") == 0)
+							if (update_version_by_hash("/user/app/NPXS39041/homebrew.elf"))
 								logshit("[STORE_GL_Loader:%s:%i] ----- Update is NOT part of the revoked listed ---\n", __FUNCTION__, __LINE__);
-							else
-							{
-
-								msgok("FATAL!\n\n [SWU Error] Update IS Revoked\n\n to use this Update turn off Secure Boot");
+							else{
+                                msgok("%s\n\n%s", getLangSTR(LOADER_FATAL),getLangSTR(SWU_ERROR));
 								goto exit_sec;
 							}
 
 
-							logshit("[STORE_GL_Loader:%s:%i] ----- Downloading RSA Sig CDN: %s ---\n", __FUNCTION__, __LINE__, cdninpute);
+							logshit("[STORE_GL_Loader:%s:%i] ----- Downloading RSA Sig CDN: %s ---\n", __FUNCTION__, __LINE__, cdnbuf);
 							if (download_file(libnetMemId, libhttpCtxId, cdnbuf, "/user/app/NPXS39041/homebrew.elf.sig") == 200)
 							{
-								loadmsg("Checking RSA Sig...\n");
+								loadmsg(getLangSTR(RSA_LOAD));
 
-								ret = sys_dynlib_dlsym(librsa, "VerifyRSA", &VerifyRSA);
-								if (!ret)
-								{
-									logshit("VerifyRSA resolved from PRX\n");
+								logshit("VerifyRSA resolved from PRX\n");
 
-									if (ret = VerifyRSA("/user/app/NPXS39041/homebrew.elf", "/mnt/sandbox/NPXS39041_000/app0/Media/rsa.pub") != 0)
-									{
-
-										msgok("FATAL!\n\n RSA Check has failed with Error Code %x\n", ret);
-										goto exit_sec;
-									}
-									else
-										logshit("Success!\n\n RSA Check has passed\n");
-
-
-									logshit("VerifyRSA from PRX return %x\n", ret);
+								if ((ret = VerifyRSA("/user/app/NPXS39041/homebrew.elf", "/mnt/sandbox/NPXS39041_000/app0/Media/rsa.pub")) != 0){
+								   msgok("%s\n\n%s: %x\n", getLangSTR(LOADER_FATAL),getLangSTR(RSA_FAILED),ret);
+								   unlink("/user/app/NPXS39041/homebrew.elf");
+								   unlink("/user/app/NPXS39041/homebrew.elf.sig");
+								   unlink("/user/app/NPXS39041/remote.md5");
+								   unlink("/user/app/NPXS39041/local.md5");
+								   goto exit_sec;
 								}
-								else {
-									msgok("FATAL!\n\n could not resolve RSA PRX\n"); goto exit_sec;
-								}
+								else
+									logshit("Success!\n\n RSA Check has passed\n");
 
-
+							   logshit("VerifyRSA from PRX return %x\n", ret);
 							}
-							else
-							{
-								msgok("FATAL!\n\nSecure Boot is enabled but we couldnt\n Download the Sig file from the CDN"); goto exit_sec;
+							else {
+								msgok("%s\n\n %s", getLangSTR(LOADER_FATAL),getLangSTR(SECURE_FAIL));
+								goto exit_sec;
 							}
-
-
-
 						}
 
 						logshit("[STORE_GL_Loader:%s:%i] ----- Cleaning Up Network ---\n", __FUNCTION__, __LINE__);
@@ -586,33 +523,31 @@ int main()
 						sceNetPoolDestroy();
 						sceNetTerm();
 
-						copyFile("/user/app/NPXS39041/homebrew.elf", "/data/self/eboot.bin");
+						if (copyFile("/user/app/NPXS39041/homebrew.elf", "/data/self/Store.self") != 0) goto err;
 
 						logshit("[STORE_GL_Loader:%s:%i] ----- calling rejail_multi ---\n", __FUNCTION__, __LINE__);
 						rejail_multi();
 
 						logshit("[STORE_GL_Loader:%s:%i] ----- Launching() ---\n", __FUNCTION__, __LINE__);
-						ret = sceSystemServiceLoadExec("/data/self/eboot.bin", 0);
-						if (ret == 0)
+						if (sceSystemServiceLoadExec("/data/self/Store.self", 0) == 0)
 							logshit("[STORE_GL_Loader:%s:%i] ----- Launched (shouldnt see) ---\n", __FUNCTION__, __LINE__);
 					}
 					else
-						msgok("Update has FAILED please reinstall the pkg\n");
+						msgok(getLangSTR(REINSTALL_PKG));
 
 				}
 				else
-					logshit("[STORE_GL_Loader:%s:%i] -----  JAILBREAK FAILED  -----\n", __FUNCTION__, __LINE__);
-
+					logshit("[STORE_GL_Loader:%s:%i] -----  RSA Function is NULL! and could not be resolved  -----\n", __FUNCTION__, __LINE__);
 			}
-
-
+			else 
+				goto err;
 		}//else if (ret == 0)
 	} // else if (ret == 0)
 	else
-		logshit("[STORE_GL_Loader:%s:%i] -----  loadModulesGl() FAILED  -----\n", __FUNCTION__, __LINE__);
+    	logshit("[STORE_GL_Loader:%s:%i] -----  JAILBREAK FAILED  -----\n", __FUNCTION__, __LINE__);
 
 err:
-   msgok("The Store Loader has encountered an error\n\nFor more info check: /user/app/NPXS39041/logs/loader.log\nThe App will now Close");
+   msgok("%s\n\n%s\n", getLangSTR(LOADER_ERROR), getLangSTR(MORE_INFO));
 
 exit_sec:
    if (rejail_multi != NULL)
@@ -622,9 +557,7 @@ exit_sec:
 	   printf("App rejailed\n");
    }
 
-  sceSystemServiceLoadExec("exit", 0);
-
-return -1;
+   return sceSystemServiceLoadExec("exit", 0);
 }
 
 void catchReturnFromMain(int exit_code)

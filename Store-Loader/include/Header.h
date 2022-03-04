@@ -201,6 +201,28 @@ void logshit(char* format, ...);
 #endif
 
 
+enum STR_type
+{
+    CDN_URL,
+    TMP_PATH,
+    USB_PATH,
+    INI_PATH,
+    FNT_PATH,
+    NUM_OF_STRINGS
+};
+
+
+#define SCE_SYSMODULE_INTERNAL_COMMON_DIALOG 0x80000018
+#define SCE_SYSMODULE_INTERNAL_SYSUTIL 0x80000018
+
+// indexed options
+typedef struct
+{
+    char* opt[NUM_OF_STRINGS];
+    bool   StoreOnUSB, Legacy, SECURE_BOOT, HomeMenu_Redirection, Daemon_on_start, Show_install_prog, Copy_INI;
+    // more options
+} StoreLoaderOptions;
+
 int msgok(char* format, ...);
 int loadmsg(char* format, ...);
 int pingtest(int libnetMemId, int libhttpCtxId, const char* src);

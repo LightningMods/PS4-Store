@@ -18,7 +18,7 @@
 #include <sys/syscall.h> // SYS_getdents
 #include <sys/param.h>   // MIN
 #include <errno.h>
-
+#include <user_mem.h>
 bool if_exists(const char* path)
 {
     int dfd = open(path, O_RDONLY, 0); // try to open dir
@@ -69,7 +69,7 @@ void CV_Create(struct CVec** cv, uint32_t size)
 
         (*cv)->cur = 0;
         (*cv)->sz = (size + 4095) & ~4095;		// round to page size
-        log_info("Allocating %llx", (*cv)->sz);
+        log_info("Allocating %i", (*cv)->sz);
         (*cv)->ptr = malloc((*cv)->sz);
     }
 }
@@ -144,59 +144,96 @@ bool getEntries(const char* path, struct CVec* cv)
 
 #include <time.h>
 int HDD_count = -1;
-
-const char* SPECIAL_XMB_ICON_FOLDERS[] = { APP_HOME_DATA_FOLDER };
-const char* SPECIAL_XMB_ICON_TID[] = { APP_HOME_DATA_TID };
+const char* SPECIAL_XMB_ICON_FOLDERS[] = { "/user/app/"APP_HOME_DATA_TID, "/user/app/"DEBUG_SETTINGS_TID};
+const char* SPECIAL_XMB_ICON_TID[] = { APP_HOME_DATA_TID,DEBUG_SETTINGS_TID };
 
 void init_xmb_special_icons(const char* XMB_ICON_PATH)
 {
-    char buf[255];
-
     if (!if_exists(XMB_ICON_PATH))
     {
         log_info("[XMB OP] Creating %s for XMB", XMB_ICON_PATH);
         mkdir(XMB_ICON_PATH, 0777);
-        snprintf(buf, 254, "%s/app.pkg", XMB_ICON_PATH);
-        touch_file(buf);
     }
     else
         log_info("[XMB OP] %s already exists", XMB_ICON_PATH);
 }
 
-void info_for_xmb_special_icons(item_t* item, const char* TITLE, const char* TID, const char* VER)
+#define MEM_DEBUG 0
+
+void buffer_to_off(item_t* ret, int index_t,  char* str) {
+
+    item_idx_t* t = &ret->token_d[0];
+
+    // log_info("t[%i].off: %p", index_t, t[index_t].buffer);
+    if (t[index_t].buffer != NULL) {
+        strcpy(t[index_t].buffer, str);
+        t[index_t].off = t[index_t].buffer;
+        t[index_t].len = strlen(str);
+
+    }
+    else {
+#if MEM_DEBUG==1
+        log_error("Index %i Buffer is NULL", index_t);
+#endif
+        t[index_t].off = strdup(str);
+        t[index_t].len = strlen(str);
+    }
+}
+
+void info_for_xmb_special_icons(item_t* item, const char* TITLE, const char* TID, const char* VER, const char* AT)
 {
 
     item_idx_t* t = &item->token_d[0];
 
-    t[NAME].off = strdup(TITLE);
-    t[NAME].len = strlen(t[NAME].off);
+    buffer_to_off(item, NAME, TITLE);
     log_info("[XMB OP] SFO Name: %s:%i", t[NAME].off, t[NAME].len);
-    t[ID].off = strdup(TID);
-    t[ID].len = strlen(t[ID].off);
+    buffer_to_off(item, ID, TID);
     log_info("[XMB OP] SFO ID: %s", t[ID].off);
-    t[VERSION].off = strdup(VER);
-    t[VERSION].len = strlen(t[VERSION].off);
+    buffer_to_off(item, VERSION, VER);
     log_info("[XMB OP] SFO VERSION: %s", t[VERSION].off);
+    buffer_to_off(item, APPTYPE, AT);
+    log_info("[XMB OP] SFO APPTYPE: %s", t[APPTYPE].off);
 }
 
+bool is_XMB_spec_icon(const char* tid) {
 
+    //Only fake *kits and real *kits have this file, so we need to check
+    //if they have APP_HOME etc...
+    if (strstr(DEBUG_SETTINGS_TID, tid) != NULL) return true;
+    if (if_exists("/system/sys/set_upper.self")) {
 
+        for (int i = 0; i < sizeof SPECIAL_XMB_ICON_TID / sizeof SPECIAL_XMB_ICON_TID[0]; i++) {
+
+            if (strstr(SPECIAL_XMB_ICON_TID[i], tid) != NULL) {
+                return true;
+            }
+
+        }
+    }
+
+    return false;
+}
+// the Settings
+extern StoreOptions set,
+* get;
 // each token_data is filled by dynalloc'd mem by strdup!
 item_t* index_items_from_dir(const char* dirpath, const char* dirpath2)
 {
 
     uint64_t start = sceKernelGetProcessTime();
+    bool is_spec_icon = false;
 
     log_info("Starting index_items_from_dir ...");
-
-   // init_xmb_special_icons(APP_HOME_DATA_FOLDER);
+   
+    for (int i = 0; i < sizeof SPECIAL_XMB_ICON_FOLDERS / sizeof SPECIAL_XMB_ICON_FOLDERS[0]; i++)
+      init_xmb_special_icons(SPECIAL_XMB_ICON_FOLDERS[i]);
 
     struct CVec* cvEntries = NULL;
     int ext_count = -1;
     CV_Create(&cvEntries, 666666 ^ 222);
 
     if (!getEntries(dirpath, cvEntries))
-        msgok(FATAL, "Unable to Open %s", dirpath);
+        msgok(FATAL, "%s %s", getLangSTR(CANT_OPEN),dirpath);
     else
         log_debug("[Dir 1] Found %i Apps in: %s", (HDD_count = cvEntries->cur / sizeof(struct _ent)), dirpath);
 
@@ -224,6 +261,7 @@ item_t* index_items_from_dir(const char* dirpath, const char* dirpath2)
 
     char tmp[256];
     // skip first reserved: take care
+    bool does_app_exist = false;
     int i = 1, j;
     for (j = 1; j < entCt + 1; j++)
     {   // we use just those token_data
@@ -232,36 +270,40 @@ item_t* index_items_from_dir(const char* dirpath, const char* dirpath2)
 
         snprintf(&tmp[0], 255, "%s", e->fname);
 
-        // for Installed_Apps
-        {
-            if (!filter_entry_on_IDs(tmp))
-            {
+        if (!is_XMB_spec_icon(e->fname)) {
+
+            if (!filter_entry_on_IDs(tmp)) {
                 log_debug("[F1] Filtered out %s", tmp);
                 continue;
             }
 
-            //extra filter: can open app.pkg
-            char fullpath[128];
-            snprintf(&fullpath[0], 127, "%s/%.9s/app.pkg", dirpath, tmp);
-
-            if (!if_exists(fullpath))
-                snprintf(&fullpath[0], 127, "%s/%.9s/app.pkg", dirpath2, tmp);
-
-            if (!if_exists(fullpath))
-            {
-                log_debug("[F2] Filtered out %s, %s doesnt exist", tmp, fullpath);
-                continue;
+            //extra filter: see if sonys pkg api can vaildate it
+            if (app_inst_util_is_exists(tmp, &does_app_exist)) {
+                if (!does_app_exist) {
+                    log_debug("[F2] Filtered out %s, the App doesnt exist", tmp);
+                    continue;
+                }
             }
         }
+        else
+            is_spec_icon = true;
+
+          if (i >= HDD_count)
+            ret[i].is_ext_hdd = true;
+          else
+            ret[i].is_ext_hdd = false;
+
         // dynalloc for user tokens
         ret[i].token_c = NUM_OF_USER_TOKENS;
         ret[i].token_d = calloc(ret[i].token_c, sizeof(item_idx_t));
-
-        ret[i].token_d[ID].off = strdup(tmp);
-        ret[i].token_d[ID].len = strlen(tmp);
-        // replicate for now
-        ret[i].token_d[NAME].off = strdup(tmp),
-        ret[i].token_d[NAME].len = strlen(tmp);
+#if MEM_DEBUG==1
+        ret[i].token_d[ID].buffer = calloc(15, sizeof(char));
+        ret[i].token_d[NAME].buffer = calloc(256, sizeof(char));
+        ret[i].token_d[VERSION].buffer = calloc(20, sizeof(char));
+        ret[i].token_d[APPTYPE].buffer = calloc(20, sizeof(char));
+#endif
+        buffer_to_off(&ret[i], ID, tmp);
+        buffer_to_off(&ret[i], NAME, tmp);
 
 #if defined (__ORBIS__)
 
@@ -273,8 +315,10 @@ item_t* index_items_from_dir(const char* dirpath, const char* dirpath2)
 #else // on pc
         snprintf(&tmp[0], 255, "./storedata/%s/icon0.png", e->fname);
 #endif
-        ret[i].token_d[PICPATH].off = strdup(tmp),
-            ret[i].token_d[PICPATH].len = strlen(tmp);
+#if MEM_DEBUG==1
+        ret[i].token_d[PICPATH].buffer = calloc(strlen(tmp)+1, sizeof(char));
+#endif
+        buffer_to_off(&ret[i], PICPATH, tmp);
         // don't try lo load
         ret[i].texture = 0;// XXX load_png_asset_into_texture(tmp);
 
@@ -288,32 +332,28 @@ item_t* index_items_from_dir(const char* dirpath, const char* dirpath2)
         snprintf(&tmp[0], 255, "./storedata/%s/param.sfo", e->fname);
 #endif  
 
-        // read sfo
-     //   for (int i = 0; sizeof SPECIAL_XMB_ICON_TID / sizeof SPECIAL_XMB_ICON_TID[0] -1; i++)
-      //  {
-
-
+       // read sfo
+       if (is_spec_icon) {
             if (strstr(e->fname, APP_HOME_DATA_TID) != NULL) {
-
-
-                if (strstr(e->fname, APP_HOME_DATA_TID))
-                {
-                    ret[i].token_d[PICPATH].off = strdup("/data/APP_HOME.png"),
-                    ret[i].token_d[PICPATH].len = strlen("/data/APP_HOME.png");
-                   // info_for_xmb_special_icons(&ret[i], "APP_HOME(Data)", APP_HOME_DATA_TID, "0.00");
-                }
-                    
+               buffer_to_off(&ret[i], PICPATH, "/data/APP_HOME.png");
+               info_for_xmb_special_icons(&ret[i], "APP_HOME(Data)", APP_HOME_DATA_TID, "0.00", "gde");
             }
-            else
-               index_token_from_sfo(&ret[i], &tmp[0]);
-      //  }
-        i++;
+            if (strstr(e->fname, DEBUG_SETTINGS_TID) != NULL) {
+                buffer_to_off(&ret[i], PICPATH, "/data/debug.png");
+                info_for_xmb_special_icons(&ret[i], "PS4 Debug Settings", DEBUG_SETTINGS_TID, "0.00", "gde");
+            }
+       }
+       else
+          index_token_from_sfo(&ret[i], &tmp[0], get->lang);
+      
+       i++;
+
+       is_spec_icon = false;
     }
 
 
     // save path and counted items in first (reserved) index
-    ret[0].token_d = calloc(1, sizeof(item_idx_t));
-    ret[0].token_d[0].off = strdup(dirpath);
+    ret[0].token_d = calloc(NUM_OF_USER_TOKENS, sizeof(item_idx_t));
     ret[0].token_c = i - 1;// updated count;
 
 
@@ -327,9 +367,20 @@ item_t* index_items_from_dir(const char* dirpath, const char* dirpath2)
     // report back
     if (0) {
         for (int i = 1; i < ret[0].token_c; i++)
-            log_info("%3d: %s", i, ret[i].token_d[ID].off);
+            log_info("%3d: %s %p", i, ret[i].token_d[NAME].off, ret[i].token_d[NAME].off);
     }
     CV_Destroy(&cvEntries);
+#if MEM_DEBUG==1
+    ret[0].token_d[ID].buffer = calloc(15, sizeof(char));
+    ret[0].token_d[NAME].buffer = calloc(256, sizeof(char));
+    ret[0].token_d[VERSION].buffer = calloc(20, sizeof(char));
+    ret[0].token_d[APPTYPE].buffer = calloc(20, sizeof(char));
+    ret[0].token_d[PICPATH].buffer = calloc(20, sizeof(char));
+#endif
+
+    buffer_to_off(&ret[0], PICPATH, "/XXXX/XXXXX/XXX");
+    info_for_xmb_special_icons(&ret[0], "StoreCore_ls_dir", "NPSX99999", "9.99", "gde");
+
 
     log_debug("Took %lld microsecs to load Apps", (sceKernelGetProcessTime() - start));
 
@@ -375,6 +426,31 @@ int df(char* out, const char* mountPoint)
     return blocks_percent_used;
 }
 
+
+
+int check_free_space(const char* mountPoint)
+{
+    struct statfs s;
+    long blocks_used = 0;
+    long blocks_percent_used = 0;
+    //struct fstab* fstabItem;
+
+    if (statfs(mountPoint, &s) != 0) {
+        log_error("error %s", mountPoint);
+        return 0;
+    }
+
+    if (s.f_blocks > 0)
+    {
+        blocks_used = s.f_blocks - s.f_bfree;
+        blocks_percent_used = (long)(blocks_used * 100.0 / (blocks_used + s.f_bavail) + 0.5);
+    }
+    double gb_free = ((long)(s.f_bavail * (s.f_bsize / 1024.0)) / 1024);
+    gb_free /= 1024.;
+    log_info("%s has %.1f GB free", mountPoint, gb_free);
+
+    return (int)floor(gb_free);
+}
 #include <time.h> // ctime
 
 void get_stat_from_file(char* out, const char* filepath)

@@ -19,8 +19,8 @@ ifeq ($(UNAME_S),Darwin)
 		CDIR	:= macos
 endif
 ODIR 		:= $(INTDIR)
-SDIR 		:= $(PROJDIR)
-IDIRS 		:= -I$(TOOLCHAIN)/include
+SDIR 		:= src
+IDIRS 		:= -I$(TOOLCHAIN)/include -Iinclude
 LDIRS 		:= -L$(TOOLCHAIN)/lib
 CFLAGS 		:= -cc1 -triple x86_64-pc-freebsd-elf  -munwind-tables $(IDIRS) -emit-obj
 LFLAGS 		:= -m elf_x86_64 -pie --script $(TOOLCHAIN)/link.x --eh-frame-hdr $(LDIRS) $(LIBS) $(TOOLCHAIN)/lib/crtlib.o

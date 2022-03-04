@@ -104,13 +104,45 @@ void PS_Button_loop()
 }
 
 #define VERSION_MAJOR 1
-#define VERSION_MINOR 01
+#define VERSION_MINOR 02
 
+void* CheckForUpdateThread()
+{
+    bool is_up_avail = false;
 
+    while (1) {
+        if (!is_up_avail) {
+            if (check_update_from_url("http://api.pkg-zone.com")) {
+                log_info("[StoreCore] Update is available, the server reported a different Hash");
+                is_up_avail = true;
+
+            }
+            else
+                log_info("[StoreCore] Update is either not required or the Update server is down");
+
+            //wait 15 mins
+            sleep(15 * 60);
+        }
+        else {
+            if (!check_update_from_url("http://api.pkg-zone.com")) {
+                log_info("[StoreCore] Update is installed.");
+                is_up_avail = false;
+
+            }
+            else
+                notify("New Store/Daemon Update Available, Please (re)Launch the Store app to Update");
+
+            sleep(5 * 60);
+        }
+    }
+
+    pthread_exit(NULL);
+    return 0;
+}
 
 int main(int argc, char* argv[])
 {
-   ScePthread thread;
+   ScePthread thread, up_thread;
    // internals: net, user_service, system_service
    loadModulesVanilla();
 
@@ -125,6 +157,10 @@ int main(int argc, char* argv[])
    log_info("[Daemon] Starting Network loop Thread...");
 
    scePthreadCreate(&thread, NULL, network_loop, NULL, "network_loop_thread");
+
+   log_info("[Daemon] Starting Update Check loop Thread...");
+
+   scePthreadCreate(&up_thread, NULL, CheckForUpdateThread, NULL, "Daemon_Update_Thread");
 
    log_info("[Daemon] Starting main PS Button loop...");
 

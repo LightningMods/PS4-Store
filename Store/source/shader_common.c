@@ -46,31 +46,38 @@ static GLuint LinkProgram(GLuint vertexShader, GLuint fragmentShader)
     return programHandle;
 }
 
-static GLuint BuildShader(const char *source, GLenum shaderType)
-{
-    GLuint shaderHandle = glCreateShader(shaderType);
+static GLuint compile(GLenum type, const char* source, int size) {
 
-    glShaderSource (shaderHandle, 1, &source, 0);
-    glCompileShader(shaderHandle);
-    GLint compileSuccess;
-    glGetShaderiv(shaderHandle, GL_COMPILE_STATUS, &compileSuccess);
+    GLint compile_result;
+    GLchar msg[512];
 
-    if (compileSuccess == GL_FALSE)
-    {
-        GLchar messages[256];
-        glGetShaderInfoLog(shaderHandle, sizeof(messages), 0, &messages[0]);
-        log_error( "compile glsl error : '%s', '%s'", messages, source);
+    GLuint handle = glCreateShader(type);
+    if (!handle) {
+        log_error("GLShader::compile: glCreateShader failed (%s)", type == GL_VERTEX_SHADER ? "vertex" : "fragment");
+        return GL_FALSE;
     }
-    return shaderHandle;
+    if (size > 0) {
+        log_info("compile: glShaderBinary: type: %s, handle = %i, size = %i", type == GL_VERTEX_SHADER ? "vertex" : "fragment", handle, size);
+        glShaderBinary(1, &handle, 0, (const GLvoid*)source, size);
+    }
+    else {
+        log_info("compile: glShaderSource: type: %s, handle = %i, size = %i", type == GL_VERTEX_SHADER ? "vertex" : "fragment", handle, strlen(source));
+        glShaderSource(handle, 1, &source, 0);
+        glCompileShader(handle);
+    }
+
+    glGetShaderiv(handle, GL_COMPILE_STATUS, &compile_result);
+    if (compile_result == GL_FALSE) {
+        glGetShaderInfoLog(handle, sizeof(msg), NULL, msg);
+        log_info("GLShader::compile: %u: %s\n", type, msg);
+        glDeleteShader(handle);
+        return GL_FALSE;
+    }
+
+    return handle;
 }
 
-GLuint BuildProgram(const char *vShader, const char *fShader)
+GLuint BuildProgram(const char* vShader, const char* fShader, int vs_size, int fs_size)
 {
-    GLuint vertexShader   = BuildShader(vShader, GL_VERTEX_SHADER);
-    GLuint fragmentShader = BuildShader(fShader, GL_FRAGMENT_SHADER);
-    /* dump those now, in .sb form
-    DumpShader(vertexShader,   "vShader");
-    DumpShader(fragmentShader, "fShader");
-    */
-    return LinkProgram(vertexShader, fragmentShader);
+    return LinkProgram(compile(GL_VERTEX_SHADER, vShader, vs_size), compile(GL_FRAGMENT_SHADER, fShader, fs_size));
 }

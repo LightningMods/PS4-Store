@@ -14,12 +14,11 @@
 #include <string.h>
 #include <stdatomic.h>
 #include <time.h>
-
+#include "shaders.h"
 
 #if defined(__ORBIS__)
     #include <orbisPad.h>
     extern OrbisPadConfig *confPad;
-    #include <KeyboardDialog.h>
     #include <installpkg.h>
 
 #endif
@@ -38,8 +37,6 @@ int jsoneq(const char *json, jsmntok_t *tok, const char *s);
 #include "utils.h"
 
 int install_ret = -1, http_ret = -1;
-
-#include "Header.h"
 
 extern const unsigned char completeVersion[];
 
@@ -152,7 +149,7 @@ int GLES2_create_layout_from_json(layout_t *l)
     int   count = 0;
     while(1)
     {   // json page_num starts from 1 !!!
-        snprintf(&json_file[0], 127, "/user/app/NPXS39041/homebrew-page%d.json", count +1);
+        snprintf(&json_file[0], 127, "/user/app/NPXS39041/pages/homebrew-page%d.json", count +1);
         // read the file
 #if defined (USE_NFS)
         // move pointer to address nfs share
@@ -174,60 +171,9 @@ int GLES2_create_layout_from_json(layout_t *l)
     return count;
 }
 
-const char *download_panel_text[] =
-{
-    "Download",
-    "Install",
-    "What more?"
-};
-
 extern const char *option_panel_text[];
-
-// menu entry strings
-#define  LPANEL_Y  (5)
-const char *new_panel_text[LPANEL_Y][11] = {
-{   // Main page: 6
-    "Store Apps",
-    "Installed Apps",
-    "Store Groups",
-    "Ready to install",
-    "Queue",
-    "Updates",
-    "Settings"
-},
-{   // Games page
-    "Search for",
-    "Sort by",
-    "Filter by"
-},
-{   // unused placeholder for Groups
-    "1: connect socket",
-    "2: screenshot",
-    "3: Alpha",
-    "4: Red",
-    "5: Green",
-    "6: Blue",
-    "7: test"
-},
-{   // (3) "Sort by" page, 10
-    "Id",
-    "Name",
-    "Package",
-    "Version",
-    "Review Stars",
-    "Size",
-    "Author",
-    "Type",
-    "Playable Version",
-    "Release date",
-	"Number of Downloads"
-},
-{   // (4) "Filter by" page, 2
-    "Playable Version",
-    "Author"
-}
-};
-
+char* new_panel_text[LPANEL_Y][11];
+char* download_panel_text[3];
 /*
     indexes item_t item_data
 */
@@ -310,27 +256,26 @@ int get_item_index(layout_t *l)
     indexes means "just address all pointers, *zerocopy* !"
     so you have to take care to where those are pointing...
 */
-int layout_fill_item_from_list(layout_t *l, const char **i_list)
+int layout_fill_item_from_list(layout_t* l, const char** i_list)
 {
     int      i, count = 0;
-    item_idx_t *token = NULL;
+    item_idx_t* token = NULL;
 
-    for(i = 0; i < l->item_c; i++) // iterate item_d
+    for (i = 0; i < l->item_c; i++) // iterate item_d
     {   // dynallocs each token_d
-        if(!l->item_d[i].token_d)
+        if (!l->item_d[i].token_d)
         {
             l->item_d[i].token_c = 1; // minimum, one token_d
             l->item_d[i].token_d = calloc(l->item_d[i].token_c, sizeof(item_t));
         }
         // we use just the first token_d
-        token      = &l->item_d[i].token_d[0];
+        token = &l->item_d[i].token_d[0];
         token->off = i_list[i];
-
-        if(token->off)
+        if (token->off)
         {
             //token->len = strlen( i_list[i] );
             count += 1;
-            log_debug( "%s, %s, %d", __FUNCTION__, token->off, count);
+            log_debug("%s, %s, %d", __FUNCTION__, token->off, count);
         }
         else
             token->len = 0;
@@ -377,10 +322,9 @@ void GLES2_scene_init( int w, int h )
     log_info("Searching for Apps");
     if (!all_apps) all_apps = index_items_from_dir("/user/app", "/mnt/ext0/user/app");
     /* now, scan .json files, populate main icon panel */
-
     // try to compose any page, count available ones
     json_c = count_availables_json();
-    log_info( "%d available json!", json_c);
+    log_info( "[StoreCore] %d available json!", json_c);
 
     // setup one for all missing, the fallback icon0
     if (!fallback_t)
@@ -392,7 +336,6 @@ void GLES2_scene_init( int w, int h )
     }
 
     /* icon panel setup */
-
     if( ! icon_panel ) icon_panel = calloc(1, sizeof(layout_t));
     // pos.xy, size.wh
     icon_panel->bound_box =  (vec4) { 680, 900,   1096, 664 };
@@ -477,7 +420,7 @@ void GLES2_scene_init( int w, int h )
     option_panel->fieldsize    = (ivec2) {   2,   5 };
     option_panel->page_sel.x   = 0;
     // malloc for max items
-    option_panel->item_c = sizeof(option_panel_text) / sizeof(option_panel_text[0]);
+    option_panel->item_c = 11;
     option_panel->item_d = calloc(option_panel->item_c, sizeof(item_t));
     // create the first screen we will show
     layout_fill_item_from_list(option_panel, &option_panel_text[0]);
@@ -633,7 +576,7 @@ void GLES2_scene_render(void)
 // just used in download panel and Settings
 void X_action_dispatch(int action, layout_t *l)
 {
-    char tmp[256];
+    char tmp[1024];
     // selected item from active panel
     log_info( "%s execute %d -> '%s'", __FUNCTION__, action, l->item_d[ action ].token_d[0].off);
 
@@ -662,6 +605,7 @@ void X_action_dispatch(int action, layout_t *l)
     //"/user/app/temp.pkg"
     // avoid same donwload path
     snprintf(&tmp[0], 255, "%s/%s.pkg", get->opt[ TMP_PATH ], t[ ID ].off);
+    log_info(tmp);
 
     dl_arg_t *ta = NULL;
     int x = thread_find_by_item( idx );
@@ -679,12 +623,8 @@ void X_action_dispatch(int action, layout_t *l)
             if(x > -1) return;
             char API_BUF[300];
             //New Download API
-#if LOCALHOST_WINDOWS
-       
-            snprintf(API_BUF, sizeof(API_BUF), "%s/00/download.php?tid=%s", get->opt[CDN_URL], t[ID].off);
-#else
+
             snprintf(API_BUF, sizeof(API_BUF), "%s/download.php?tid=%s", get->opt[CDN_URL], t[ID].off);
-#endif
             if (strcmp(t[ID].off, STORE_TID) != NULL)
             {
                 //Check for the Legacy INI Setting, its a Bool, and check to be Sure its not trying to download a direct DL (.pkg)
@@ -694,7 +634,7 @@ void X_action_dispatch(int action, layout_t *l)
                     http_ret = dl_from_url_v2(t[label].off, &tmp[0], t); //Download from Legacy
             }
             else
-                msgok(WARNING, "HB Store is Not Available for PS4 Download, it is a Website Only Download");
+                msgok(WARNING, getLangSTR(NOT_ON_APP));
 
         } break;
         /* Install */
@@ -702,9 +642,9 @@ void X_action_dispatch(int action, layout_t *l)
             if(ta
             && ta->status == COMPLETED)
             {
-                log_info("pkginstall(%s)", tmp);
+                log_info("pkginstall(%s,%i,%i)", tmp, ta->contentLength, get->Show_install_prog);
                 // install
-                pkginstall(&tmp[0]);
+                pkginstall(&tmp[0], ta->contentLength, get->Show_install_prog);
 
                 // clean thread args for next job
                 if(ta->dst) free((void*)ta->dst), ta->dst = NULL;
@@ -729,41 +669,39 @@ actions_for_Settings:
         case FNT__SETTING:
         
             if(action == INI_PATH)
-                 msgok(WARNING, "You are making a NEW INI The app WILL NOT use this INI also it will NOT be saved to the INI the app is using!");
+                 msgok(WARNING, getLangSTR(NEW_INI));
 
             log_warn("%p, %s", l, get->opt[action]);
-            snprintf(&tmp[0], 255, "%s", StoreKeyboard(l->item_d[action].token_d[0].off, get->opt[action]));
+            snprintf(&tmp[0], 1024, "%s", StoreKeyboard(l->item_d[action].token_d[0].off, get->opt[action]));
             // clean string, works for LF, CR, CRLF, LFCR, ...
             tmp[strcspn(tmp, "\r")] = 0;
 
             // check for valid result
-            if (strlen(tmp) <= 1 || strlen(tmp) >= 255 ) {
-                msgok(NORMAL, "String is either too long or INVALID Please enter a vaild entry");  goto error;
+            if (strlen(tmp) <= 1 ) {
+                msgok(NORMAL, getLangSTR(STR_TOO_LONG));  goto error;
             }
 
-            if(action != CDN_URL && strstr(tmp, "/user") == NULL)
+            if (strstr(tmp, "ps4h3x") != NULL)
             {
-                if(strstr(tmp, "/mnt") == NULL)
-                {
-                    if(strstr(tmp, "/data") == NULL)
-                    {
-                       if(strstr(tmp, "/system_ex") == NULL)
-                       {
-                        msgok(NORMAL, "INVALID Path! enter a vaild path"); goto error;
-                       }
-                    }
-                }
+                msgok(WARNING, "Fuck off you Tatto ke sudagar, also tell your mom i said hi :)");
+                goto error;
+            }
+
+            if (action != CDN_URL && !if_exists(tmp))
+            {
+                msgok(NORMAL, getLangSTR(INVAL_PATH));
+                goto error;
             }
 
             if((action == TMP_PATH && strstr(tmp, "pkg") != NULL) || strstr(tmp, "/data") != NULL)
             {
-                msgok(NORMAL, "Pkg Suffix and /data path are disallowed for TEMP PATH NOTE: DO NOT include .pkg in your temp path"); goto error;
+                msgok(NORMAL, getLangSTR(PKG_SUF)); goto error;
             }
 
             // validate result (CDN)
-            if(action == CDN_URL && strstr(tmp, "http://") == NULL)
+            if(action == CDN_URL && strstr(tmp, "://") == NULL )
             {
-                msgok(NORMAL, "INVALID CDN make sure its in the format http://CDN/  no Https urls are allowed");  goto error;
+                msgok(NORMAL, getLangSTR(INVAL_CDN));  goto error;
             }
 
             // update 
@@ -778,11 +716,11 @@ actions_for_Settings:
             if(action == FNT_PATH) {
                 if(strstr(get->opt[action],".ttf") != NULL)
                     GLES2_fonts_from_ttf(get->opt[action]);
-                else
-                    msgok(NORMAL, "INVALID .ttf path Please ensure the file ext is .ttf");  goto error;
+                else {
+                    msgok(NORMAL, getLangSTR(INVAL_TTF));  goto error;
+                }
              }
 
-            strcmp(get->opt[action], tmp);
             break;
 
         error:
@@ -791,39 +729,40 @@ actions_for_Settings:
 
         // execute action, set flags
         case STORE_USB_SETTING: {//STORE_ON_USB
-            if (get->opt[action])
+            if (get->StoreOnUSB)
             {
-                get->opt[action] = 0;
-                snprintf(get->opt[TMP_PATH], 255, "%s", "/user/app");
+                get->StoreOnUSB = 0;
+                snprintf(get->opt[TMP_PATH], 255, "%s", "/user/app/NPXS39041/downloads");
             }
             else {
-                get->opt[action] = 1;
+                get->StoreOnUSB = 1;
                 snprintf(get->opt[TMP_PATH], 255, "%s", "/mnt/usb0");
             }
             break;
         }
 
         case CLEAR_CACHE_SETTING: { // clear cached images
-            loadmsg("Clearing Cached contents");
+            loadmsg(getLangSTR(CLEARING_CACHE));
             unlink(STORE_LOG);
             FILE* fp = fopen(STORE_LOG, "w");
             log_add_fp(fp, LOG_DEBUG);
             log_info("Settings -> Clear Cached images and content");
 
-            if (rmtree("/user/app/NPXS39041/covers") && rmtree("/user/app/NPXS39041/storedata"))
-                msgok(NORMAL, "Successfully Deleted/Cleared all Cached Images");
+            if (rmtree("/user/app/NPXS39041/covers") && rmtree("/user/app/NPXS39041/storedata") && rmtree("/user/app/NPXS39041/pages"))
+                msgok(NORMAL, getLangSTR(CACHE_CLEARED));
             else
-                msgok(WARNING, "Clearing Cached content failed");
+                msgok(WARNING, getLangSTR(CACHE_FAILED));
 
             mkdir("/user/app/NPXS39041/covers", 0777); 
+            mkdir("/user/app/NPXS39041/pages", 0777);
             mkdir("/user/app/NPXS39041/storedata", 0777);
 
             break;
         }
 
-        case USE_REFLECTION_SETTING: {
-            use_reflection = (use_reflection) ? false : true;
-            log_info("use_reflection: %d", use_reflection);
+        case SHOW_INSTALL_PROG: {
+            get->Show_install_prog = (get->Show_install_prog) ? false : true;
+            log_info("SHOW_INSTALL_PROG: %d", get->Show_install_prog);
             break;
         }
         case USE_PIXELSHADER_SETTING: {
@@ -833,13 +772,13 @@ actions_for_Settings:
         }
         case HOME_MENU_SETTING: {
             //
-         if (is_connected_app) {
-            get->HomeMenu_Redirection = (get->HomeMenu_Redirection) ? false : true;
-            log_info("Turning Home menu %s", get->HomeMenu_Redirection ? "ON (ItemzFlow)" : "OFF (Orbis)" );
+            if (is_connected_app) {
+                get->HomeMenu_Redirection = (get->HomeMenu_Redirection) ? false : true;
+                log_info("Turning Home menu %s", get->HomeMenu_Redirection ? "ON (ItemzFlow)" : "OFF (Orbis)");
 
-            uint8_t* IPC_BUFFER = malloc(100);
-            int error = INVALID, wait = INVALID;
-        
+                uint8_t* IPC_BUFFER = malloc(100);
+                int error = INVALID, wait = INVALID;
+
                 if (get->HomeMenu_Redirection)
                 {
                     error = IPCSendCommand(ENABLE_HOME_REDIRECT, IPC_BUFFER);
@@ -851,13 +790,11 @@ actions_for_Settings:
                     error = IPCSendCommand(DISABLE_HOME_REDIRECT, IPC_BUFFER);
                     if (error == NO_ERROR)
                         log_debug("HOME MENU REDIRECT IS DISABLED");
-                }       
+                }
                 free(IPC_BUFFER);
             }
             else
-                msgok(WARNING, "this feature is disabled\n Reason: The ItemzFlow Daemon is NOT connected");
-
-
+                msgok(WARNING, getLangSTR(ITEMZ_FEATURE_DISABLED));
 
             break;
         }
@@ -865,10 +802,10 @@ actions_for_Settings:
             log_info("%p, %d", l, action);
 
             if (!SaveOptions(get))
-                msgok(WARNING, "Save error, your changes were NOT saved");
+                msgok(WARNING, getLangSTR(SAVE_ERROR));
             else
             {
-                msgok(NORMAL, "Your changes were saved successfully");
+                msgok(NORMAL, getLangSTR(SAVE_SUCCESS));
                 log_info("Settings saved to %s", get->opt[INI_PATH]);
                 // reload settings
                 LoadOptions(get);

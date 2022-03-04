@@ -1,7 +1,14 @@
 #include "Header.h"
 #include <stdarg.h>
 #include <MsgDialog.h>
+#include "lang.h"
 #define ORBIS_TRUE 1
+
+static int skipSslCallback(int libsslId, unsigned int verifyErr, void* const sslCert[], int certNum, void* userArg)
+{
+	logshit("sslCtx=%x (%X)", libsslId, verifyErr);
+	return 0;
+}
 
 
 int msgok(char* format, ...)
@@ -110,6 +117,12 @@ int pingtest(int libnetMemId, int libhttpCtxId, const char* src)
 	if (tpl < 0)
 		goto clean;
 
+
+	if (sceHttpsSetSslCallback(tpl, skipSslCallback, NULL) < 0)
+		goto clean;
+	else
+		logshit("[STORE_GL_Loader:%s:%i] ----- sceHttpsSetSslCallback() Success ---\n", __FUNCTION__, __LINE__);
+
 	ret = sceHttpCreateConnectionWithURL(tpl, src, ORBIS_TRUE);
 	if (ret < 0)
 	{
@@ -118,6 +131,7 @@ int pingtest(int libnetMemId, int libhttpCtxId, const char* src)
 	}
 	else
 		logshit("[STORE_GL_Loader:%s:%i] ----- sceHttpCreateConnectionWithURL() Success ---\n", __FUNCTION__, __LINE__);
+
 
 	int conn = ret;
 
@@ -179,7 +193,6 @@ int progstart(char* msg)
 	return ret;
 }
 
-
 int download_file(int libnetMemId, int libhttpCtxId, const char* src, const char* dst)
 {
 	int ret;
@@ -188,10 +201,13 @@ int download_file(int libnetMemId, int libhttpCtxId, const char* src, const char
 	uint64_t contentLength;
 	int 	 statusCode;
 
+	unlink(dst);
 	int tpl = sceHttpCreateTemplate(libhttpCtxId, TEST_USER_AGENT, ORBIS_HTTP_VERSION_1_1, 1);
 	if (tpl < 0)
 		goto error;
 
+	if (sceHttpsSetSslCallback(tpl, skipSslCallback, NULL) < 0)
+		goto error;
 
 	ret = sceHttpCreateConnectionWithURL(tpl, src, ORBIS_TRUE);
 	if (ret < 0)
@@ -241,7 +257,7 @@ int download_file(int libnetMemId, int libhttpCtxId, const char* src, const char
 	{
 		char buf[1024];
 
-		progstart("Starting Download");
+		progstart(getLangSTR(DOWNLOADING_UPDATE));
 
 		int fd = sceKernelOpen(dst, O_WRONLY | O_CREAT, 0777);
 		int total_read = 0;
@@ -266,7 +282,7 @@ int download_file(int libnetMemId, int libhttpCtxId, const char* src, const char
 			int status = sceMsgDialogUpdateStatus();
 			if (ORBIS_COMMON_DIALOG_STATUS_RUNNING == status)
 			{
-				sprintf(buf, "Downloading...\n\n %s\n Size: %lld", dst, contentLength);
+				sprintf(buf, "%s...\n\n %s\n Size: %lld", getLangSTR(DOWNLOADING_UPDATE),dst, contentLength);
 				sceMsgDialogProgressBarSetValue(0, g_progress);
 				sceMsgDialogProgressBarSetMsg(0, buf);
 			}

@@ -12,6 +12,7 @@
 #include "defines.h"
 #include "utils.h"
 #include "GLES2_common.h"
+#include "shaders.h"
 
 
 int DL_CO = 0;
@@ -93,7 +94,7 @@ static void layout_dispatch_X(layout_t *l)
                     l->page_sel.x = 1,
                     l->item_c     = 3, 
                     l->curr_item  = 0;
-                    layout_fill_item_from_list(l, &new_panel_text[ l->page_sel.x ][0]);
+                    layout_fill_item_from_list(l, &new_panel_text[l->page_sel.x][0]);
                     layout_update_sele(l, 0);
                     active_p = icon_panel;
                     break;
@@ -152,7 +153,7 @@ static void layout_dispatch_X(layout_t *l)
                     // get char *pattern
                     snprintf(&pattern[0], 69, "%s", StoreKeyboard(NULL, "Search..."));
                     log_info( "@@@@@@@@@  Search for: %s", pattern);
-                    loadmsg("Searching....");
+                    loadmsg(getLangSTR(SEARCHING));
                     label = NAME;
 
 search_by_label:
@@ -208,7 +209,8 @@ wen_found_hit:
                     active_p      = left_panel2;
 switch_page:
                     l->curr_item  = 0;
-                    layout_fill_item_from_list(l, &new_panel_text[ l->page_sel.x ][0]);
+                    layout_fill_item_from_list(l, &new_panel_text[l->page_sel.x][0]);
+
                     layout_update_sele(l, 0);
 
                     goto refresh_active_panel;

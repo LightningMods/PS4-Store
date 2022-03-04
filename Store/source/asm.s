@@ -117,4 +117,18 @@ daemon_eboot_end:
 daemon_eboot_size:
     .int    daemon_eboot_end - daemon_eboot
 
+    
+    # elf
+    .global lang_ini
+    .type   lang_ini_sz, @object
+    .align  4
+lang_ini:
+    .incbin "lang.ini"
+lang_ini_end:
+    .global lang_ini_sz
+    .type   lang_ini_sz, @object
+    .align  4
+lang_ini_sz:
+    .int    lang_ini_end - lang_ini
+
 

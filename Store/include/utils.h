@@ -1,25 +1,33 @@
 #pragma once
 
 #include "defines.h"
-
-#include <pl_ini.h>
-#include <MsgDialog.h>
-#include <ImeDialog.h>
-#include <CommonDialog.h>
-#include <KeyboardDialog.h>
+#include "ini.h"
+#include <dialog.h>
 #include <sys/param.h>   // MIN
 #include "log.h"
 #include <sys/_iovec.h>
+#include "lang.h"
 #include <user_mem.h> 
 
 #define DIM(x)  (sizeof(x)/sizeof(*(x)))
 #define KB(x)   ((size_t) (x) << 10)
 #define MB(x)   ((size_t) (x) << 20)
+#define GB(x)   ((size_t) (x) << 20)
+#define B2GB(x)   ((size_t) (x) >> 30)
+#define B2MB(x)   ((size_t) (x) >> 20)
+
 
 enum MSG_DIALOG {
     NORMAL,
     FATAL,
     WARNING
+};
+
+
+enum SORT_APPS_BY {
+    SORT_NA = -1,
+    SORT_TID,
+    SORT_ALPHABET
 };
 
 
@@ -72,7 +80,8 @@ typedef union SceNetCtlInfo {
 } SceNetCtlInfo;
 
 
-
+#define STORE_MAX_LIMIT_PAGES 1000
+#define PAGE_SIZE 15
 #define STORE_LOG "/user/app/NPXS39041/logs/log.txt"
 #define STANDALONE_APP 0
 #define DAEMON_PATH "/system/vsh/app/ITEM00002"
@@ -102,21 +111,6 @@ typedef struct _LncAppParam
 LncAppParam;
 
 
-static const char *option_panel_text[] =
-{
-    "Content Delivery Network",
-    "Temporary Path",
-    "Set as Home Menu(XMB)",
-    "INI Path",
-    "Custom FreeType font Path",
-    // following doesn't store strings for any Paths...
-    "Store Downloads on USB",
-    "Clear cached images", //(deletes storedata and covers)
-    "Enable CF reflections",
-    "Enable CF bg shader",
-    "Save Settings"
-};
-
 #define BETA 0
 //#define LOCALHOST_WINDOWS 1
 
@@ -131,22 +125,6 @@ enum STR_type
     BETA_KEY,
 #endif
     NUM_OF_STRINGS
-};
-
-
-enum Settings_options
-{
-    CDN_SETTING,
-    TMP__SETTING,
-    HOME_MENU_SETTING,
-    INI_SETTING,
-    FNT__SETTING,
-    STORE_USB_SETTING,
-    CLEAR_CACHE_SETTING,
-    USE_REFLECTION_SETTING,
-    USE_PIXELSHADER_SETTING,
-    SAVE_SETTINGS,
-    NUM_OF_SETTINGS
 };
 
 
@@ -169,13 +147,18 @@ enum CHECK_OPTS
 typedef struct
 {
     char *opt[ NUM_OF_STRINGS ];
-    bool   StoreOnUSB, Legacy, HomeMenu_Redirection, Daemon_on_start;
+    bool   StoreOnUSB, Legacy, HomeMenu_Redirection, Daemon_on_start, Show_install_prog;
+    int lang;
     // more options
 } StoreOptions;
 
+// the Settings
+extern StoreOptions set,
+* get;
+
 char *usbpath(void);
-int LoadOptions(StoreOptions *set);
-int SaveOptions(StoreOptions *set);
+bool LoadOptions(StoreOptions *set);
+bool SaveOptions(StoreOptions *set);
 
 char *StoreKeyboard(const char *Title, char *initialTextBuffer);
 
@@ -192,17 +175,17 @@ long CalcAppsize(char *path);
 char* cutoff(const char* str, int from, int to);
 
 int getjson(int Pagenumb, char* cdn, bool legacy);
-int MD5_hash_compare(const char* file1, const char* hash);
+bool MD5_hash_compare(const char* file1, const char* hash);
 int copyFile(char* sourcefile, char* destfile);
 void ProgSetMessagewText(int prog, const char* fmt, ...);
 bool app_inst_util_uninstall_patch(const char* title_id, int* error);
 bool app_inst_util_uninstall_game(const char *title_id, int *error);
-char *check_from_url(const char *url_,  enum CHECK_OPTS opt);
+char *check_from_url(const char *url_,  enum CHECK_OPTS opt, bool silent);
 int check_store_from_url(int page_number, char* cdn, enum CHECK_OPTS opt);
 int check_download_counter(StoreOptions* set, char* title_id);
 bool rmtree(const char path[]);
 void setup_store_assets(StoreOptions* get);
-void refresh_apps_for_cf(void);
+void refresh_apps_for_cf(enum SORT_APPS_BY op);
 int64_t sys_dynlib_load_prx(char* prxPath, int* moduleID);
 int64_t sys_dynlib_unload_prx(int64_t prxID);
 int64_t sys_dynlib_dlsym(int64_t moduleHandle, const char* functionName, void* destFuncOffset);
@@ -216,10 +199,33 @@ int IPCCloseConnection();
 void GetIPCMessageWithoutError(uint8_t* buf, uint32_t sz);
 uint32_t Launch_App(char* TITLE_ID, bool silent);
 int mountfs(const char* device, const char* mountpoint, const char* fstype, const char* mode, uint64_t flags);
-
-//int check_store_from_url(char* cdn, enum CHECK_OPTS opt, int *page_number);
-
+int check_free_space(const char* mountPoint);
 extern bool dump;
+#define MAX_MESSAGE_SIZE    0x1000
+#define MAX_STACK_FRAMES    60
+
+/**
+ * A callframe captures the stack and program pointer of a
+ * frame in the call path.
+ **/
+typedef struct {
+    void* sp;
+    void* pc;
+} callframe_t;
+
+typedef struct {
+    void* unk01;
+    void* unk02;
+    off_t offset;
+    int unk04;
+    int unk05;
+    unsigned isFlexibleMemory : 1;
+    unsigned isDirectMemory : 1;
+    unsigned isStack : 1;
+    unsigned isPooledMemory : 1;
+    unsigned isCommitted : 1;
+    char name[32];
+} OrbisKernelVirtualQueryInfo;
 
 typedef struct OrbisUserServiceLoginUserIdList {
 	int32_t userId[4];
@@ -230,4 +236,9 @@ typedef struct OrbisUserServiceInitializeParams {
 } OrbisUserServiceInitializeParams;
 
 #define SCE_LNC_UTIL_ERROR_ALREADY_RUNNING 0x8094000c
+
+extern char* title[300];
+extern char* title_id[30]; 
+
+void SIG_Handler(int sig_numb);
 

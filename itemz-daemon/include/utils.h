@@ -96,3 +96,4 @@ do {\
 void handleIPC(struct clientArgs* client, uint8_t* buffer, uint32_t length);
 void* network_loop();
 void* ipc_client(void* args);
+bool check_update_from_url(const char* url);

@@ -1,1 +1,1 @@
-cd ../itemz-daemon/ && make clean && make -j8 && make oelf && make eboot && cd ../Store/ && make clean && make -j8 && make oelf && make eboot
+cd ../libdumper/ && make -j24 && make install && cd ../itemz-daemon/ && make clean && make -j24 && make oelf && make eboot && cd ../Store/ && make clean && make -j24 && make oelf && make eboot

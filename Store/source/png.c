@@ -199,7 +199,6 @@ GLuint load_texture(
 }
 
 /* externed */ vec2 tex_size; // last loaded png size as (w, h)
-
 /// textures
 GLuint load_png_asset_into_texture(const char* relative_path)
 {
@@ -231,6 +230,32 @@ GLuint load_png_asset_into_texture(const char* relative_path)
     }
     else
         log_debug( "%s(%s) FAILED!", __FUNCTION__, relative_path);
+
+    // no texture
+    return 0;
+}
+/// textures
+GLuint load_png_data_into_texture(const char* data, int size)
+{
+ 
+    // texture creation
+    if(size>0)
+    {
+        const RawImageData raw_image_data = get_raw_image_data_from_png(data,size);
+
+        const GLuint    texture_object_id = load_texture(raw_image_data.width, raw_image_data.height,raw_image_data.gl_color_format,raw_image_data.data);
+
+        // take note of image resolution size to setup VBO in px size
+        tex_size = (vec2){ raw_image_data.width, raw_image_data.height };
+        // delete buffers
+        release_raw_image_data(&raw_image_data);
+
+    //log_debug( "%s(%s) ret: %d", __FUNCTION__, relative_path, texture_object_id);
+
+        return texture_object_id;
+    }
+    else
+        log_debug( "%s(%s) FAILED!", __FUNCTION__, "EMBEDDED DATA");
 
     // no texture
     return 0;

@@ -46,15 +46,19 @@ static char buffer[255];
 u8 *sfodata = NULL;
 int j;
 
+
 char buff[255];
 //int SFODump(int check_app_ver, char *path, item_t *item)
-int index_token_from_sfo(item_t *item, char *path)
+int index_token_from_sfo(item_t *item, char *path, int lang)
 {
             sfodata      = orbisFileGetFileContent(path);
     size_t  sfodata_size = _orbisFile_lastopenFile_size;
-    int    check_app_ver = 0;
+    char* lang_title[16];
 
     item_idx_t *t = &item->token_d[0];
+
+    snprintf(&lang_title[0], 15, "TITLE_%i", lang);
+    //log_info("SFO TITLE: %s", lang_title);
 
     if (sfodata)
     {
@@ -88,77 +92,15 @@ int index_token_from_sfo(item_t *item, char *path)
 #endif
             snprintf(&tmp[0], 255, "%s", (const char*)&e_data[0]);
             // 
-            if( ! strcmp(s_key, "TITLE"   ) ) 
-            {
-                t[ NAME    ].off = strdup(tmp);
-                t[ NAME    ].len = strlen(tmp);
-            }
-            if( ! strcmp(s_key, "TITLE_ID"   ) ) 
-            {
-                t[ ID    ].off = strdup(tmp);
-                t[ ID    ].len = strlen(tmp);
-            }
+            
+            if (!strcmp(s_key, "TITLE"))
+                  buffer_to_off(item, NAME, tmp);
+            if (!strcmp(lang_title, s_key))
+                   buffer_to_off(item, NAME, tmp);
             if( ! strcmp(s_key, "VERSION" ) )
-            {
-                t[ VERSION ].off = strdup(tmp);
-                t[ VERSION ].len = strlen(tmp);
-            }
-            if( ! strcmp(s_key, "APP_TYPE") ) t[ APPTYPE ].off = strdup(tmp);
-
-            // basically we could continue here...
-
-            if (check_app_ver == 0)
-            {
-                if (strcmp(s_key, "TITLE") == 0)
-                {
-//                  log_info("Param[%04lu] \"%s\" : \"%s\" ", n, s_key, (const char*)&e_data[0]);
-
-                    snprintf(buffer, 254,  "%s", (const char*)&e_data[0]);
-
-                    if (strlen(buffer) < 25)
-                    {
-                        strcpy(buff, buffer);
-                    }
-                    else
-                    {
-                        snprintf(buff, 254, "%.25s..", buffer);
-                    }
-                    //print_text(510, 110, buff);
-                }
-                else if (strcmp(s_key, "TITLE_ID") == 0)
-                {
-                    snprintf(buffer, 254, "%s", (const char*)&e_data[0]);
-                    //print_text(510, 150, buffer);
-                }
-                else if (strcmp(s_key, "CONTENT_ID") == 0)
-                {
-                    snprintf(buffer, 254, "%.25s..", (const char*)&e_data[0]);
-                    //print_text(510, 200, buffer);
-                }
-                else if (strcmp(s_key, "PARENTAL_LEVEL") == 0)
-                {
-                    snprintf(buffer, 254, "PARENTAL LEVEL: %d ", *(u32*)&e_data[0]);
-                    //print_text(510, 230, buffer);
-                }
-                else if (strcmp(s_key, "PUBTOOLVER") == 0)
-                {
-                    snprintf(buffer, 254, "PUBTOOLVER: %d ", *(u32*)&e_data[0]);
-                    //print_text(580, 280, buffer);
-                }
-                else if (strcmp(s_key, "VERSION") == 0)
-                {
-                    snprintf(buffer, 254, "APP VER: %s ", (const char*)&e_data[0]);
-                    //print_text(210, 580, buffer);
-                }
-            }
-            else if (check_app_ver == 1)
-            {
-                if (strcmp(s_key, "VERSION") == 0)
-                {
-                    snprintf(buffer, 254, "%s", (const char*)&e_data[0]);
-                }
-            }
-            else log_info("failed to open \"%s\" ", path);
+                buffer_to_off(item, VERSION, tmp);
+            if( ! strcmp(s_key, "APP_TYPE") ) 
+                buffer_to_off(item, APPTYPE, tmp);
 
             // release, don't leak
             if(e_data) free(e_data), e_data = NULL;

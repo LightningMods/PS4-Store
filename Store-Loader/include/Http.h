@@ -102,14 +102,6 @@ typedef enum {
 
 #define ORBIS_HTTP_INVALID_ID	0
 
-typedef int (*SceHttpsCallback)(
-	int libsslCtxId,
-	unsigned int verifyErr,
-	void * const sslCert[],
-	int certNum,
-	void *userArg);
-
-
 typedef int (*OrbisHttpAuthInfoCallback)(
 	int request,
 	OrbisHttpAuthType authType,
@@ -323,8 +315,8 @@ void sceHttpsGetCaList();
 void sceHttpsGetSslError();
 // Empty Comment
 void sceHttpsLoadCert();
-// Empty Comment
-int sceHttpsSetSslCallback(int id, SceHttpsCallback cbfunc, void *userArg);
+typedef int (*HttpsCallback)(int libsslCtxId, unsigned int verifyErr, void* const sslCert[], int certNum, void* userArg);
+int sceHttpsSetSslCallback(int id, HttpsCallback cbfunc, void* userArg);
 // Empty Comment
 void sceHttpsSetSslVersion();
 // Empty Comment

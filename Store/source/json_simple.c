@@ -26,26 +26,14 @@ int count_availables_json(void)
 {
     int   count = 0;
     char  json_file[128];
-    void *p;
 
-    while(1)
-    {   // json page_num starts from 1 !!!
-        snprintf(&json_file[0], 127, "/user/app/NPXS39041/homebrew-page%d.json", count +1);
-        // read the file
-#if defined (USE_NFS)
-        #warning "we use nfs!"
-//        p = &json_file[20];
-//        log_info( "open:%s", p);
-        // move pointer to address nfs share
-        p = (void*)orbisNfsGetFileContent(&json_file[20]);
-#else
-        p = (void*)orbisFileGetFileContent(&json_file[0]);
-#endif
-        // check
-        if(p) free(p), p = NULL;  else break;
-        // passed, increase num of available pages
+    do{   // json page_num starts from 1 !!!
         count++;
-    }
+        snprintf(&json_file[0], 127, "/user/app/NPXS39041/pages/homebrew-page%d.json", count);
+        // passed, increase num of available pages
+    } while (if_exists(&json_file[0]));
+    count--;
+
     return count;
 }
 
