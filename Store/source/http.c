@@ -127,8 +127,8 @@ int ini_dl_req(struct dl_args *i)
             log_info("[%s:%i] ----- Content-Length = %lu ---", __FUNCTION__, __LINE__, contentLength);
         }
         else { // for some reason COUNT and MD5 have no LENs but the app still loads the content fine???
-            i->contentLength = 255;
-            log_warn("Code 200 Success.. however no content len was reported by the server by default this app only downloads 10kbs ");
+            i->contentLength = 0x10000;
+            log_warn("Code 200 Success.. however no content len was reported by the server by default this app only downloads 1MB ");
         }
 
         return statusCode;
