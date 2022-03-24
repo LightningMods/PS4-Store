@@ -369,11 +369,15 @@ void check_n_load_texture(const int idx)
 #endif
         if( ! if_exists(path) ) // download
         {
-            int ret = dl_from_url(url, path, false);
-            if( ret ) {
-                i->texture = fallback_t;
+            if (strstr(path, "settings.ini") == NULL) {
+                int ret = dl_from_url(url, path, false);
+                if (ret) {
+                    i->texture = fallback_t;
+                }
+                else goto load_png; // we go there by 0
             }
-            else goto load_png; // we go there by 0
+            else
+                msgok(FATAL, "This CDN is not to be trusted, Consider deleting it Now");
         }
         else
         {
@@ -581,7 +585,7 @@ void GLES2_render_layout_v2(layout_t *l, int unused)
     if(icon_panel != l
     || icon_panel == active_p)
     {   // texts from layout vbo
-        ftgl_render_vbo(l->vbo, NULL);
+         ftgl_render_vbo(l->vbo, NULL);
     }
 
 //  log_info("%s %p", __FUNCTION__, l);

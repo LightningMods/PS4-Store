@@ -31,15 +31,16 @@ namespace pfs {
     {
         uint64_t bytes;
         uint64_t ix = 0;
+        int f = -1;
 
-        int fd = sceKernelOpen(fname, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+        int fd = sceKernelOpen(fname, O_WRONLY | O_CREAT | O_TRUNC | O_NONBLOCK, 0777);
         log_info("---- name: %s, ptr %p, sz %zu, FD: %i", fname, ptr, size, fd);
         if (fd > 0)
         {
             while (size > 0)
             {
                 bytes = (size > PFS_DUMP_BUFFER) ? PFS_DUMP_BUFFER : size;
-                log_info("copying %llu bytes ix: %i size: %llu pfsa prog: %llu/%llu", bytes, ix, size, pfs_copied, pfs_size);
+                log_info("copying %llu bytes ix: %i size: %llu pfs prog: %llu/%llu", bytes, ix, size, pfs_copied, pfs_size);
                 sceKernelLseek(pfs, ptr + ix * PFS_DUMP_BUFFER, SEEK_SET);
                 sceKernelRead(pfs, copy_buffer, bytes);
                 sceKernelWrite(fd, copy_buffer, bytes);

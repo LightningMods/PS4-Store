@@ -20,7 +20,7 @@
 #include "shaders.h"
 #include "GLES2_common.h"
 
-#include "json.h"
+
 extern char* group_label[8];
 extern vec2 resolution;
 

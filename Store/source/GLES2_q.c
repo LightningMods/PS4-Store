@@ -295,6 +295,12 @@ void *start_routine2(void *argument)
     if (i->contentLength > MB(100))
         DL_SIZE = MB(10);
    
+    //OR 80MBs if over 1GB
+    if (i->contentLength > GB(1)) {
+        DL_SIZE = MB(80);
+        log_info("CT: %lx GB: %lx", i->contentLength, GB(1));
+    }
+
     uint64_t* buf = (uint64_t*)malloc(DL_SIZE);
 
     if (buf == NULL) goto cleanup;

@@ -409,8 +409,12 @@ bool LoadOptions(StoreOptions *set)
         if (!if_exists(buff))
         {
             log_warn( "No INI on USB");
-            if (if_exists("/user/app/NPXS39041/settings.ini"))
+            if (if_exists("/user/app/NPXS39041/settings.ini")) {
                 snprintf(set->opt[INI_PATH], 255, "%s", "/user/app/NPXS39041/settings.ini");
+                error = ini_parse("/user/app/NPXS39041/settings.ini", print_ini_info, set);
+                if (error) log_error("Bad config file (first error on line %d)!\n", error);
+            }
+
         } else {
             error = ini_parse(buff, print_ini_info, set);
             if (error) log_error("Bad config file (first error on line %d)!\n", error);
@@ -889,22 +893,24 @@ int check_download_counter(StoreOptions* set, char* title_id)
 
 
 // 
-int check_store_from_url(int page_number, char* cdn, enum CHECK_OPTS opt)
+int check_store_from_url(char* cdn, enum CHECK_OPTS opt)
 {
     char  http_req[300];
-    char  dst_path[300];
     char *result = NULL;
 
     switch(opt)
     {
         case MD5_HASH:
         {
-            snprintf(http_req, 300, "%s/api.php?page=%i&check_hash=true", cdn, page_number);
-            snprintf(dst_path, 300, "/user/app/NPXS39041/pages/homebrew-page%i.json", page_number);
+            if (!if_exists(SQL_STORE_DB))
+                return 0;
 
-            if ((result = check_from_url(http_req, MD5_HASH, false)) != NULL && MD5_hash_compare(dst_path, result) == SAME_HASH)
+            snprintf(http_req, 299, "%s/api.php?db_check_hash=true", cdn);
+
+            if ((result = check_from_url(http_req, MD5_HASH, false)) != NULL && MD5_hash_compare(SQL_STORE_DB, result) == SAME_HASH)
             {
-                free(result); return 1;
+                free(result); 
+                return 1;
             }
             else
             {
@@ -917,26 +923,18 @@ int check_store_from_url(int page_number, char* cdn, enum CHECK_OPTS opt)
 
         case COUNT:
         {
-            snprintf(http_req, 300, "%s/api.php?count=true", cdn);
-
             int pages = 0;
-            if ((result = check_from_url(http_req, COUNT, false)) != NULL)
+            int count = SQL_Get_Count();
+            if (count > 0)
             {
-                log_info("result %s", result);
-                if (atoi(result) < STORE_MAX_LIMIT_PAGES)
-                    pages = (atoi(result) + PAGE_SIZE - 1) / PAGE_SIZE;
-                else
+                pages = (count + PAGE_SIZE - 1) / PAGE_SIZE;
+                if (pages >  STORE_MAX_LIMIT_PAGES)
                     msgok(FATAL, getLangSTR(EXCEED_LIMITS));
-
-                if (pages <= 0)
-                    msgok(FATAL, getLangSTR(ZERO_ITEMS));
-
-                free(result);
 
                 log_debug("counted pages: %d", pages);
             }
             else
-                msgok(FATAL, getLangSTR(COUNT_NULL));
+                msgok(FATAL, getLangSTR(ZERO_ITEMS));
           
             return pages;
         } break;
@@ -955,49 +953,6 @@ int check_store_from_url(int page_number, char* cdn, enum CHECK_OPTS opt)
         default: break;
     }
     return 0;   
-}
-
-int getjson(int Pagenumb, char* cdn, bool legacy)
-{
-    char http_req[300];
-    char destbuf [300];
-
-    snprintf(destbuf, 300, "/user/app/NPXS39041/pages/homebrew-page%i.json", Pagenumb);
-
-    if(legacy == true)
-        snprintf(http_req, 300, "%s/homebrew-page%i.json", cdn, Pagenumb);
-    else
-    {
-        snprintf(http_req, 300, "%s/api.php?page=%i", cdn, Pagenumb);
-        if (if_exists(destbuf))
-        {
-            log_info("page %i exists", Pagenumb);
-            if (!check_store_from_url(Pagenumb, get->opt[CDN_URL], MD5_HASH))
-            {
-                unlink(destbuf);
-                if( dl_from_url(http_req, destbuf, false) )
-                {
-                    msgok(FATAL, "%s: %i: %s",getLangSTR(DL_FAILED_W), Pagenumb, get->opt[CDN_URL]);
-                    return -1;
-                }
-            }
-            else
-            {
-                log_info("HASH IS THE SAME"); return 0;
-            }
-        }
-        else
-        {
-            if( dl_from_url(http_req, destbuf, false) )
-            {
-                msgok(FATAL, "%s: %i From: %s", getLangSTR(DL_ERROR_PAGE),Pagenumb, get->opt[CDN_URL]);
-                return -1;
-            }
-        }
-    }   
-    log_info("%s %s", __FUNCTION__, http_req);
-
-    return dl_from_url(http_req, destbuf, false);
 }
 
 

@@ -5,7 +5,7 @@
 #include <freetype-gl.h>
 // freetype-gl pass last composed Text_Length in pixel, we use to align text!
 // from json_simple.c
-#include "json.h"
+
 #include "net.h"
 
 /*
@@ -22,6 +22,7 @@
     - shared for Search/Groups
     - the query to save search results;
 */
+
 
 typedef struct
 {
@@ -178,8 +179,6 @@ extern char* gm_p_text[5]; // 5
 extern char* new_panel_text[5][11];
 // posix threads args, for downloading
 extern dl_arg_t* pt_info;
-
-int count_availables_json(void);
 
 char* get_json_token_value(item_idx_t* item, int name);
 void refresh_atlas(void);

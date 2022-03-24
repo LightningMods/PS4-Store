@@ -31,7 +31,7 @@ extern float tl;
 #include "GLES2_common.h"
 
 #include "jsmn.h"
-#include "json.h"
+
 int jsoneq(const char *json, jsmntok_t *tok, const char *s);
 
 #include "utils.h"
@@ -147,28 +147,14 @@ int GLES2_create_layout_from_json(layout_t *l)
     char  json_file[128];
     void *p;
     int   count = 0;
-    while(1)
-    {   // json page_num starts from 1 !!!
-        snprintf(&json_file[0], 127, "/user/app/NPXS39041/pages/homebrew-page%d.json", count +1);
-        // read the file
-#if defined (USE_NFS)
-        // move pointer to address nfs share
-        p = (void*)orbisNfsGetFileContent(&json_file[20]);
-#else
-        p = (void*)orbisFileGetFileContent(&json_file[0]);
-#endif
-        // check
-        if(!p) break;
 
-        int valid_tokens = json_index_used_tokens_v2(l, p);
+    count = SQL_Get_Count();
 
-        log_info( "%d valid_tokens!", valid_tokens);
-        // passed, increase num of available pages
-        count++;
-        // don't leak the json buffer read from file
-        if(p) free(p), p = NULL;
-    }
-    return count;
+    int valid_tokens = sql_index_tokens(l, count);
+
+    log_info( "%d valid_tokens!", valid_tokens);
+
+    return valid_tokens;
 }
 
 extern const char *option_panel_text[];
@@ -323,7 +309,7 @@ void GLES2_scene_init( int w, int h )
     if (!all_apps) all_apps = index_items_from_dir("/user/app", "/mnt/ext0/user/app");
     /* now, scan .json files, populate main icon panel */
     // try to compose any page, count available ones
-    json_c = count_availables_json();
+    json_c =  check_store_from_url(NULL, COUNT);
     log_info( "[StoreCore] %d available json!", json_c);
 
     // setup one for all missing, the fallback icon0
@@ -627,11 +613,12 @@ void X_action_dispatch(int action, layout_t *l)
             snprintf(API_BUF, sizeof(API_BUF), "%s/download.php?tid=%s", get->opt[CDN_URL], t[ID].off);
             if (strcmp(t[ID].off, STORE_TID) != NULL)
             {
-                //Check for the Legacy INI Setting, its a Bool, and check to be Sure its not trying to download a direct DL (.pkg)
-                if (!get->Legacy || (strstr(t[label].off, ".pkg") == NULL && strstr(t[label].off, ".PKG") == NULL))
-                    http_ret = dl_from_url_v2(API_BUF, &tmp[0], t); //Download from New API
-                else
-                    http_ret = dl_from_url_v2(t[label].off, &tmp[0], t); //Download from Legacy
+                log_info("t[label].off %s", t[label].off);
+                    //Check for the Legacy INI Setting, its a Bool, and check to be Sure its not trying to download a direct DL (.pkg)
+                    if (strstr(t[label].off, "pkg-zone.com") != NULL )
+                        http_ret = dl_from_url_v2(API_BUF, &tmp[0], t); //Download from New API
+                    else
+                        http_ret = dl_from_url_v2(t[label].off, &tmp[0], t); //Download from Legacy
             }
             else
                 msgok(WARNING, getLangSTR(NOT_ON_APP));
@@ -687,7 +674,7 @@ actions_for_Settings:
                 goto error;
             }
 
-            if (action != CDN_URL && !if_exists(tmp))
+            if (action == INI_PATH && !touch_file(tmp) || action != CDN_URL && !if_exists(tmp))
             {
                 msgok(NORMAL, getLangSTR(INVAL_PATH));
                 goto error;

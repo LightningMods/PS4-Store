@@ -7,7 +7,7 @@ TargetFile=homebrew.elf
 
 include $(ORBISDEV)/make/ps4sdk.mk
 
-LinkerFlags +=  -ldumper -lc++ -lc++abi -lc++experimental -luser_mem_sys -lkernel_stub -lSceLibcInternal_stub -lSceSysmodule_stub -lSceSystemService_stub -lSceNet_stub -lSceUserService_stub -lScePigletv2VSH_stub -lSceVideoOut_stub  -lSceImeDialog_stub -lSceGnmDriver_stub  -lorbis -lorbisGl -lScePad_stub -lSceCommonDialog_stub -lSceMsgDialog_stub -lSceAudioOut_stub -lSceIme_stub -lSceAppInstUtil_stub -lSceBgft_stub -lSceSysUtil_stub -lSceHttp_stub -lSceSsl_stub -lSceNetCtl_stub -lfreetype-gl -lSceFreeTypeOl_stub -lkernel_sys_stub -lSceLncUtil_stub
+LinkerFlags +=  -ldumper -lc++ -lc++abi -lc++experimental -luser_mem_sys -lkernel_stub -lSceLibcInternal_stub -lSceSysmodule_stub -lSceSystemService_stub -lSceNet_stub -lSceUserService_stub -lScePigletv2VSH_stub -lSceVideoOut_stub  -lSceImeDialog_stub -lSceGnmDriver_stub  -lorbis -lorbisGl -lScePad_stub -lSceCommonDialog_stub -lSceMsgDialog_stub -lSceAudioOut_stub -lSceIme_stub -lSceAppInstUtil_stub -lSceBgft_stub -lSceSysUtil_stub -lSceHttp_stub -lSceSsl_stub -lSceNetCtl_stub -lfreetype-gl -lSceFreeTypeOl_stub -lkernel_sys_stub -lSceLncUtil_stub -lSQLite 
 
 CompilerFlags += -D__PS4__ -D__ORBIS__ -fstack-protector-all # -DHAVE_SHADER_COMPILER
 CompilerFlagsCpp += -std=c++17 -DHAVE_CONFIG_H -D_U_="__attribute__((unused))" -D__ORBIS__=1 -D_ORBIS_ -DNDEBUG -D_BSD_SOURCE -fexceptions -frtti

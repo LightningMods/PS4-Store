@@ -31,6 +31,15 @@ int  contentLengthType;
 uint64_t contentLength;
 
 
+int jsoneq(const char* json, jsmntok_t* tok, const char* s) {
+    if (tok->type == JSMN_STRING && (int)strlen(s) == tok->end - tok->start &&
+        strncmp(json + tok->start, s, tok->end - tok->start) == 0) {
+        return 0;
+    }
+    return -1;
+}
+
+
 
 void DL_ERROR(const char* name, int statusCode, struct dl_args *i)
 {
@@ -127,8 +136,8 @@ int ini_dl_req(struct dl_args *i)
             log_info("[%s:%i] ----- Content-Length = %lu ---", __FUNCTION__, __LINE__, contentLength);
         }
         else { // for some reason COUNT and MD5 have no LENs but the app still loads the content fine???
-            i->contentLength = 0x10000;
-            log_warn("Code 200 Success.. however no content len was reported by the server by default this app only downloads 1MB ");
+            i->contentLength = KB(600);
+            log_warn("Code 200 Success.. however no content len was reported by the server by default this app only downloads 600kbs ");
         }
 
         return statusCode;
@@ -265,7 +274,7 @@ int dl_from_url(const char *url_, const char *dst_, bool is_threaded)
 }
 
 #include "jsmn.h"
-#include "json.h"
+
 int jsoneq(const char *json, jsmntok_t *tok, const char *s);
 
 
@@ -354,20 +363,6 @@ char *check_from_url(const char *url_, enum CHECK_OPTS opt, bool silent)
                 return strdup(RES_STR);
             }
         }//
-    }
-    else if(opt == COUNT)
-    {
-        log_info( "COUNT_JSON = %s", JSON);
-
-        for (int i = 1; i < r; i++) {
-            if (jsoneq(JSON, &t[i], "number_rows") == 0) {
-                snprintf(RES_STR, 255, "%.*s", t[i + 1].end - t[i + 1].start, JSON + t[i + 1].start);
-                cleanup_net(dl_args.req, dl_args.connid, dl_args.tmpid);
-                return strdup(RES_STR);
-            }
-
-        }//
-
     }
     else if (opt == DL_COUNTER)
     {

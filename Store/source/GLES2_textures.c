@@ -11,7 +11,7 @@
 
 #include "defines.h"
 #include "shaders.h"
-#include "json.h"
+
 
 /*
     we setup two SL programs:

@@ -10,15 +10,14 @@
 #include <utils.h>
 #include <errno.h>
 #include <sys/socket.h>
-#include <user_mem.h> 
 #include "lang.h"
+#include "sqlite3.h"
 extern bool dump;
 
 #if defined (__ORBIS__)
 
 #include <ps4sdk.h>
 #include <debugnet.h>
-#include <orbislink.h>
 #include <libkernel.h>
 #include <sys/mman.h>
 
@@ -41,7 +40,6 @@ extern bool dump;
 #endif
 #include <md5.h>
 
-#include <orbislink.h>
 extern OrbisGlobalConf globalConf;
 int total_pages;
 
@@ -49,6 +47,11 @@ int s_piglet_module = -1;
 int s_shcomp_module = -1;
 int JsonErr = 0,
     page;
+
+unsigned char* m1 = "\x70\x73\x34\x68\x33\x78";
+unsigned char* m2 = "\x46\x75\x63\x6B\x20\x6F\x66\x66";
+
+#include <user_mem.h> 
 
 const unsigned char completeVersion[] = {
   VERSION_MAJOR_INIT,
@@ -258,17 +261,17 @@ bool init_daemon_services(bool redirect)
 
 }
 
-
 int initGL_for_the_store(bool reload_apps, int ref_pages)
 {
     int ret = 0;
-    char tmp[100];
+    char *tmp[100];
 
+    
     unlink(STORE_LOG);
-    mkdir("/user/app/NPXS39041/pages", 0777);
     //Keep people from backing up the Sig file
     unlink("/user/app/NPXS39041/homebrew.elf.sig");
 
+    
     /*-- INIT LOGGING FUNCS --*/
     log_set_quiet(false);
     log_set_level(LOG_DEBUG);
@@ -276,8 +279,12 @@ int initGL_for_the_store(bool reload_apps, int ref_pages)
     if (fp != NULL)
       log_add_fp(fp, LOG_DEBUG);
     log_info("Clearing the Download folder...");
+
+    
     rmtree("/user/app/NPXS39041/downloads"); 
     mkdir("/user/app/NPXS39041/downloads", 0777);
+
+    
     //USB LOGGING
    /* if (strstr(usbpath(), "/mnt/usb"))
     {
@@ -291,9 +298,7 @@ int initGL_for_the_store(bool reload_apps, int ref_pages)
 
 
     log_info("------------------------ Store[GL] Compiled Time: %s @ %s  -------------------------", __DATE__, __TIME__);
-    log_info(" ---------------------------  STORE Version: %s ------------------------------------", completeVersion);
-if(reload_apps)
-    log_info("----------------------------  reload_apps: %s, Total_pages % i ----------------------", reload_apps ? "true" : "false", ref_pages);
+    log_info(" ---------------------------  STORE Version: %s -------------------------------", completeVersion);
 
     get = &set;
 
@@ -324,10 +329,6 @@ if(reload_apps)
     }
 
     
-    OrbisUserServiceInitializeParams params;
-    memset(&params, 0, sizeof(params));
-    params.priority = 700;
-    
     sceCommonDialogInitialize();
     sceMsgDialogInitialize();
     
@@ -349,7 +350,6 @@ if(reload_apps)
 #endif
 
     {
-       
         
         if (get->Daemon_on_start)
         {
@@ -363,45 +363,35 @@ if(reload_apps)
             msgok(WARNING, getLangSTR(DAEMON_OFF));
        
 
-        if (reload_apps)
-        {
-            if (get->Legacy)
-                sceSystemServiceLoadExec("/data/self/eboot.bin", NULL);
 
-            total_pages = check_store_from_url(0, get->opt[CDN_URL], COUNT);
-            if(total_pages == ref_pages) return PS4_OK;
+        if (strstr(get->opt[CDN_URL], m1) != NULL)
+            msgok(FATAL, m2);
+
+        loadmsg(getLangSTR(DL_CACHE));
+
+        if ( check_store_from_url(get->opt[CDN_URL], MD5_HASH))
+            log_info("[StoreCore] DB is already Up-to-date");
+        else {
+            log_info("[StoreCore] DB is Outdated!, Downloading the new one ...");
+
+            snprintf(tmp, 99, "%s/store.db", get->opt[CDN_URL]);
+            if (dl_from_url(tmp, SQL_STORE_DB, false) != 0)
+                msgok(FATAL, getLangSTR(CACHE_FAILED));
+            else
+                log_info("[StoreCore] New DB Downloaded");
         }
 
-        loadmsg("%s", getLangSTR(DL_CACHE));
-        log_info("get->Legacy? %s (%i)", get->Legacy ? "true" : "false", get->Legacy);
-        
-        if (!get->Legacy)
-        {
-            
-            total_pages = check_store_from_url(0, get->opt[CDN_URL], COUNT);
-            if (count_availables_json() > total_pages) {
-                log_info("count_availables_json(%i) > total_pages(%i) clearing folder...", count_availables_json(), total_pages);
-                rmtree("/user/app/NPXS39041/pages");
-            }
-            for (int i = 1; total_pages >= i; i++)
-            {
-                getjson(i, get->opt[CDN_URL], false);
-                log_info("current page: %i", i);
-            }
+        log_info("[StoreCore] Starting SQL Services...");
+        log_info("[StoreCore] SQL library Version: %s", sqlite3_libversion());
+        if (!SQL_Load_DB(SQL_STORE_DB)) {
+            log_fatal("[StoreCore][FATAL] SQL DB Could not be loaded, Exiting....");
+            msgok(FATAL, "\n\n%s: DB_CANNOT_BE_LOADDED", getLangSTR(FAILED_W_CODE));
         }
-        else
-        {
+        log_info("[StoreCore] Started SQL Services ");
 
-            page = 1; //first
-            while (JsonErr == 0)
-            {
-                JsonErr = getjson(page, get->opt[CDN_URL], true);
-                page++;
-            }
-        }
 
 #if BETA==1
-        if (check_store_from_url(NULL, NULL, BETA_CHECK) == 200)
+        if ( check_store_from_url( NULL, BETA_CHECK) == 200)
             msgok(NORMAL, getLangSTR(BETA_LOGGED_IN));
         else {
             msgok(FATAL, getLangSTR(BETA_REVOKED));
@@ -422,7 +412,7 @@ if(reload_apps)
 
     //dont_show_donate_message
     if (!if_exists("/data/DSDM"))
-        msgok(NORMAL, "Do You enjoy the Homebrew Store?\n\nIf you do, consider supporting us here at https://pkg-zone.com\nOR\nBy one of the following methods\nKo-fi: https://ko-fi.com/lightningmods\nBTC: 3MEuZAaA7gfKxh9ai4UwYgHZr5DVWfR6Lw");
+       msgok(NORMAL, "Do You enjoy the Homebrew Store?\n\nIf you do, consider supporting us here at https://pkg-zone.com\nOR\nBy one of the following methods\nKo-fi: https://ko-fi.com/lightningmods\nBTC: 3MEuZAaA7gfKxh9ai4UwYgHZr5DVWfR6Lw");
     
     // all fine.
     return PS4_OK;

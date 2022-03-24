@@ -8,14 +8,50 @@
 #include <sys/_iovec.h>
 #include "lang.h"
 #include <user_mem.h> 
+#include <sqlite3.h>
 
 #define DIM(x)  (sizeof(x)/sizeof(*(x)))
 #define KB(x)   ((size_t) (x) << 10)
 #define MB(x)   ((size_t) (x) << 20)
-#define GB(x)   ((size_t) (x) << 20)
+#define GB(x)   ((size_t) (x) << 30)
 #define B2GB(x)   ((size_t) (x) >> 30)
 #define B2MB(x)   ((size_t) (x) >> 20)
+/*
+* | ============================
+* | SQL DEFINES
+* |
+*/
 
+
+/*
+| SQL Table names in ORDER
+| ==============================
+*/
+#define DB_NAME " homebrews"
+
+/*
+| OTHER SQL COMMANDS
+*/
+#define SQL_COUNT "SELECT COUNT(*) FROM"DB_NAME
+// Supply a Number
+#define SQL_SELECT_ROW_BY_NUMB "SELECT * WHERE pid LIKE "
+// Supply a Number
+#define SQL_SELECT_NAME_BY_ROW_NUMB "SELECT name WHERE pid LIKE "
+
+//DATABASE STORE USES
+#define SQL_STORE_DB "/user/app/NPXS39041/store.db"
+
+
+extern sqlite3* db;
+
+bool SQL_Load_DB(const char* dir);
+bool SQL_Exec(const char* smt, int (*cb)(void*, int, char**, char**));
+int SQL_Get_Count(void);
+/*
+|
+| SQL END
+| =============================
+*/
 
 enum MSG_DIALOG {
     NORMAL,
@@ -132,8 +168,8 @@ extern int HDD_count;
 enum CHECK_OPTS
 {
     MD5_HASH,
-    COUNT,
     DL_COUNTER,
+    COUNT,
 #if BETA==1
     BETA_CHECK,  
 #endif
@@ -181,7 +217,7 @@ void ProgSetMessagewText(int prog, const char* fmt, ...);
 bool app_inst_util_uninstall_patch(const char* title_id, int* error);
 bool app_inst_util_uninstall_game(const char *title_id, int *error);
 char *check_from_url(const char *url_,  enum CHECK_OPTS opt, bool silent);
-int check_store_from_url(int page_number, char* cdn, enum CHECK_OPTS opt);
+int check_store_from_url(char* cdn, enum CHECK_OPTS opt);
 int check_download_counter(StoreOptions* set, char* title_id);
 bool rmtree(const char path[]);
 void setup_store_assets(StoreOptions* get);

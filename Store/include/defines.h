@@ -46,33 +46,6 @@ enum SH_type
 #include "lang.h"
 #include "dialog.h"
 
-
-#if defined (__ORBIS__)
-
-#include <ps4sdk.h>
-#include <debugnet.h>
-#define  fprintf  debugNetPrintf
-#define  ERROR    DEBUGNET_ERROR
-#define  DEBUG    DEBUGNET_DEBUG
-#define  INFO     DEBUGNET_INFO
-#include <orbisGl.h>
-#include <orbislink.h>
-#include <libkernel.h>  //sceKernelIccSetBuzzer
-
-#else // on linux
-
-#define  debugNetPrintf  fprintf
-#define  ERROR           stderr
-#define  DEBUG           stdout
-#define  INFO            stdout
-#include <GLES2/gl2.h>
-//#include <orbisAudio.h>
-
-#endif // defined (__ORBIS__)
-
-
-#pragma once
-
 #include "md5.h"
 #include <libSceSysmodule.h>
 #include <dialog.h>
@@ -87,7 +60,7 @@ enum SH_type
 #include <sys/_types.h>
 #include <sys/fcntl.h> //O_CEAT
 #include <user_mem.h> 
-#include "json.h"
+
 
 enum Settings_options
 {
@@ -151,7 +124,7 @@ int32_t netInit(void);
 
 
 #define VERSION_MAJOR 2
-#define VERSION_MINOR 02
+#define VERSION_MINOR 03
 
 #define BUILD_YEAR_CH0 (__DATE__[ 7])
 #define BUILD_YEAR_CH1 (__DATE__[ 8])

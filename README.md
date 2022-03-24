@@ -19,18 +19,18 @@
 ## Libaries
 
 
-- [OrbisDev SDK](https://github.com/orbisdev/orbisdev) 
-- [OOSDK for PRXs](https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain) 
+- [OrbisDev SDK](https://github.com/orbisdev/orbisdev) (MIT)
+- [Orbis SQLite](https://github.com/orbisdev/orbisdev-libSQLite) (GPLv3)
+- [OOSDK for PRXs](https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain) (GPLv3)
 - [JSMN](https://github.com/zserge/jsmn) (MIT)
-- [INI Parser](https://github.com/0xe1f/psplib/tree/master/libpsp) (Apache License 2.0)
+- [INI Parser](https://github.com/benhoyt/inih) (New BSD license)
 - [RSA Verify (ARMmbed)](https://github.com/ARMmbed/mbedtls) (Apache License 2.0)
 - [OpenSSL/MD5](https://github.com/openssl/openssl) (Apache License 2.0)
 - [BusyBox](https://elixir.bootlin.com/busybox/0.39/source) (GPLv2)
-- [LibPNG](https://github.com/glennrp/libpng) 
-- [log.c](https://github.com/rxi/log.c)
-- [Game Dumper](https://github.com/Al-Azif/dumper-testing)
-- [libjbc](https://github.com/sleirsgoevy/ps4-libjbc)
-- Libz
+- [LibPNG & zlib](https://github.com/glennrp/libpng) (PNG Ref. Lib. License ver. 1)
+- [log.c](https://github.com/rxi/log.c) (MIT)
+- [Game Dumper](https://github.com/Al-Azif/dumper-testing) (GPLv3)
+- [libjbc](https://github.com/sleirsgoevy/ps4-libjbc) (License Unknown)
 
 ## Refs
 - [ShaderToy](shadertoy.com) 
@@ -53,10 +53,10 @@ temppath=PATH_WHERE_TO_DOWNLOAD_THE_PKGS; Required
 StoreOnUSB=0 //store pkgs on usb OPTIONAL
 TTF_Font=/mnt/usb0/myfont.ttf // TTF Font the store will try to use (embedded font on fail)
 BETA_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxx //for Beta Builds (define)
-Legacy=0 // Enables old Store APIs
 Home_Redirection=1 // Enables the Home Menu Redirect
 Daemon_on_start=0 // Disables the Daemon from auto starting with the app
 Show_install_prog=1 // Enables the Store PKG/APP install Progress
+Copy_INI=1 // Copies USB INI to the PS4s app dir.
 ```
 
 ## Daemon

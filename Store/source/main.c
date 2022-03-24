@@ -225,6 +225,8 @@ int main(int argc, char* argv[])
         log_info("jailbreak_me resolved from PRX");
 
         if ((ret = jailbreak_me() != 0)) goto error;
+
+        
     }
     else
         goto error;
