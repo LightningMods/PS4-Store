@@ -19,26 +19,6 @@
 #include <time.h>
 #include <string.h>
 
-
-static const char* illegalFiles[] = {
-    "sce_sys/about",
-    "sce_discmap.plt",
-    "sce_discmap_patch.plt",
-    "sce_sys/playgo-chunk.dat",
-    "sce_sys/playgo-chunk.sha",
-    "sce_sys/playgo-manifest.xml",
-    "sce_sys/psreserved.dat",
-    "sce_sys/license.dat",
-    "sce_sys/license.info",
-    "sce_sys/icon0.dds",
-    "sce_sys/icon1.dds",
-    "sce_sys/pic0.dds",
-    "sce_sys/pic1.dds",
-    "sce_sys/about/right.sprx",
-    "sce_sys/origin-deltainfo.dat",
-    "Place Holder"
-};
-
 namespace gp4 {
 
 void recursive_directory(const std::string &path, pugi::xml_node &node) {
@@ -52,7 +32,7 @@ void recursive_directory(const std::string &path, pugi::xml_node &node) {
 
       //check for sce_sys/about
         log_info("folder %s", std::string(p.path()).c_str());
-      if (strstr(std::string(p.path()).c_str(), illegalFiles[0]) != NULL) {
+      if (strstr(std::string(p.path()).c_str(), "sce_sys/about") != NULL) {
           log_info("continuing...");
             continue;
       }
@@ -173,8 +153,6 @@ pugi::xml_document make_playgo(const std::string& playgo_xml) {
     return doc;
 }
 
-#define ARRAY_SIZE(ar) (sizeof(ar) / sizeof((ar)[0]))
-
 pugi::xml_document make_files(const std::string& path, std::vector<std::string>& elf_files, Dump_Options opt) {
     // Check for empty or pure whitespace path
     bool is_illegal = false;
@@ -186,6 +164,35 @@ pugi::xml_document make_files(const std::string& path, std::vector<std::string>&
     const char* gp4_path;
     pugi::xml_node files_node = doc.append_child("files");
     files_node.append_attribute("img_no") = "0"; // TODO: PlayGo
+
+     // Files to skip when making GP4
+    std::vector<std::string> skip_files = {
+      "sce_discmap.plt",
+      "sce_discmap_patch.plt",
+      "sce_sys/about/right.sprx", // Cannot be included for official PKG tools
+      "sce_sys/icon0.dds",
+      "sce_sys/license.dat",
+      "sce_sys/license.info",
+      "sce_sys/pic0.dds",
+      "sce_sys/pic1.dds",
+      "sce_sys/playgo-chunk.dat",
+      "sce_sys/playgo-chunk.sha",
+      "sce_sys/playgo-manifest.xml",
+      "sce_sys/psreserved.dat",
+      "sce_sys/origin-deltainfo.dat"
+    };
+
+    for (uint64_t i = 0; i < 100; i++) {
+        std::stringstream ss_image;
+        ss_image << "sce_sys/icon0_" << std::dec << std::setfill('0') << std::setw(2) << i << ".dds";
+        skip_files.push_back(ss_image.str());
+        ss_image.str(std::string());
+        ss_image << "sce_sys/pic0_" << std::dec << std::setfill('0') << std::setw(2) << i << ".dds";
+        skip_files.push_back(ss_image.str());
+        ss_image.str(std::string());
+        ss_image << "sce_sys/pic1_" << std::dec << std::setfill('0') << std::setw(2) << i << ".dds";
+        skip_files.push_back(ss_image.str());
+    }
 
     for (auto&& p : std::filesystem::recursive_directory_iterator(path)) {
         if (std::filesystem::is_regular_file(p.path())) {
@@ -207,16 +214,16 @@ pugi::xml_document make_files(const std::string& path, std::vector<std::string>&
                  gp4_path = std::string(p.path()).c_str() + 20;
 
             if (strstr(gp4_path, "sce_sys") != NULL) {
-                for (int i = 0; i < ARRAY_SIZE(illegalFiles); i++) {
-                    if (strcmp(gp4_path, illegalFiles[i]) == 0)
+                for (int i = 0; i < skip_files.size(); i++) {
+                    if (strcmp(gp4_path, skip_files[i].c_str()) == 0)
                     {
-                        log_info("Found Illegal file %s skipping...", illegalFiles[i]);
+                        log_info("Found Illegal file %s skipping...", skip_files[i].c_str());
                         is_illegal = true;
                         break;
                     }
                 }
             }
-            else if (strstr(gp4_path, illegalFiles[1]) != NULL || strstr(gp4_path, illegalFiles[2]) != NULL)
+            else if (strstr(gp4_path, skip_files[0].c_str()) != NULL || strstr(gp4_path, skip_files[1].c_str()) != NULL)
             {   // sce_discmap.plt sce_discmap_path.plt
                 // file skip
                 log_info("Found Illegal file %s skipping...", gp4_path);

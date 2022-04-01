@@ -101,7 +101,18 @@ bool dump_patch(char* title_id, char* usb_p, char* gtitle)
     if (if_exists(src_path))
     {
         log_debug("Dumping Patch...");
-        return Dumper(usb_p, title_id, GAME_PATCH, gtitle);
+        if (Dumper(usb_p, title_id, GAME_PATCH, gtitle))
+        {
+            sprintf(src_path, "%s/%s-patch.complete", usb_p, title_id);
+            touch_file(src_path);
+
+            sprintf(src_path, "%s/%s-patch.dumping", usb_p, title_id);
+            unlink(src_path);
+
+            return true;
+        }
+        else
+            return false;
     }
     else
     {
@@ -115,29 +126,31 @@ bool dump_game(char *title_id, char *usb_p, char *gtitle)
     char buff[255];
     sprintf(buff, "/mnt/sandbox/pfsmnt/%s-app0-nest/pfs_image.dat", title_id);
     if (if_exists(buff)) {
-        //false on success
-        //true on error
+        //false on error
+        //true on success
         //true refers to the error flag, if the flag is true then fail
         if (Dumper(usb_p, title_id, BASE_GAME, gtitle)) {
+
+            sprintf(buff, "%s/%s.complete", usb_p, title_id);
+            touch_file(buff);
+            sprintf(buff, "%s/%s.dumping", usb_p, title_id);
+            unlink(buff);
+            
             return dump_patch(title_id, usb_p, gtitle);
         }
         else {
             log_debug("Dumping Base game failed, trying to dump as Remaster...");
-            if (Dumper(usb_p, title_id, REMASTER, gtitle))
-                return dump_patch(title_id, usb_p, gtitle);
-        }
-        sprintf(buff, "%s/%s.complete", usb_p, title_id);
-        touch_file(buff);
-        sprintf(buff, "%s/%s-patch.complete", usb_p, title_id);
-        touch_file(buff);
-        sprintf(buff, "%s/%s.dumping", usb_p, title_id);
-        unlink(buff);
-        sprintf(buff, "%s/%s-patch.dumping", usb_p, title_id);
-        unlink(buff);
-    }
-    else
-        msgok(WARNING,"BETA ERROR: pfs_mount.dat cant be open");
+            if (Dumper(usb_p, title_id, REMASTER, gtitle)) {
 
+                sprintf(buff, "%s/%s.complete", usb_p, title_id);
+                touch_file(buff);
+                sprintf(buff, "%s/%s.dumping", usb_p, title_id);
+                unlink(buff);
+
+                return dump_patch(title_id, usb_p, gtitle);
+            }
+        }
+    }
 
     return false;
 }
