@@ -261,6 +261,7 @@ bool init_daemon_services(bool redirect)
 
 }
 
+
 int initGL_for_the_store(bool reload_apps, int ref_pages)
 {
     int ret = 0;
@@ -337,7 +338,6 @@ int initGL_for_the_store(bool reload_apps, int ref_pages)
     globalConf.confPad = orbisPadGetConf();
 
     //rif_exp("/user/license/freeIV0002-NPXS39041_00.rif");
-
     mkdir("/user/app/NPXS39041/covers", 0777);
 
     if (!LoadOptions(get)) msgok(WARNING, getLangSTR(INI_ERROR));
@@ -364,8 +364,9 @@ int initGL_for_the_store(bool reload_apps, int ref_pages)
        
 
 
-        if (strstr(get->opt[CDN_URL], m1) != NULL)
-            msgok(FATAL, m2);
+        if (strstr(get->opt[CDN_URL], m1) != NULL) {
+            raise(SIGQUIT);
+        }
 
         loadmsg(getLangSTR(DL_CACHE));
 

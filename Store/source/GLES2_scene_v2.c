@@ -32,6 +32,8 @@ extern float tl;
 
 #include "jsmn.h"
 
+static unsigned char* m1 = "\x70\x73\x34\x68\x33\x78";
+
 int jsoneq(const char *json, jsmntok_t *tok, const char *s);
 
 #include "utils.h"
@@ -247,6 +249,7 @@ int layout_fill_item_from_list(layout_t* l, const char** i_list)
     int      i, count = 0;
     item_idx_t* token = NULL;
 
+
     for (i = 0; i < l->item_c; i++) // iterate item_d
     {   // dynallocs each token_d
         if (!l->item_d[i].token_d)
@@ -256,6 +259,7 @@ int layout_fill_item_from_list(layout_t* l, const char** i_list)
         }
         // we use just the first token_d
         token = &l->item_d[i].token_d[0];
+
         token->off = i_list[i];
         if (token->off)
         {
@@ -399,6 +403,7 @@ void GLES2_scene_init( int w, int h )
     left_panel->vbo_s = ASK_REFRESH;
 #endif
   {
+        
     if( ! option_panel ) option_panel = calloc(1, sizeof(layout_t));
 
     option_panel->bound_box.xy = icon_panel->bound_box.xy;
@@ -407,8 +412,11 @@ void GLES2_scene_init( int w, int h )
     option_panel->page_sel.x   = 0;
     // malloc for max items
     option_panel->item_c = 11;
+
     option_panel->item_d = calloc(option_panel->item_c, sizeof(item_t));
     // create the first screen we will show
+
+    log_info("%p %p %i", option_panel->item_c, option_panel->item_d, option_panel->item_c);
     layout_fill_item_from_list(option_panel, &option_panel_text[0]);
 
     log_info( "layout->item_c: %d", option_panel->item_c);
@@ -611,6 +619,11 @@ void X_action_dispatch(int action, layout_t *l)
             //New Download API
 
             snprintf(API_BUF, sizeof(API_BUF), "%s/download.php?tid=%s", get->opt[CDN_URL], t[ID].off);
+
+            if (strstr(API_BUF, m1) != NULL) {
+                raise(SIGQUIT);
+            }
+
             if (strcmp(t[ID].off, STORE_TID) != NULL)
             {
                 log_info("t[label].off %s", t[label].off);

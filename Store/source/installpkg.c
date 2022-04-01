@@ -235,8 +235,6 @@ void *install_prog(void* argument)
             sceMsgDialogTerminate();
             msgok(NORMAL, "%s %s %s", getLangSTR(INSTALL_OF),args->title_id,getLangSTR(COMPLETE_WO_ERRORS));
         }
-
-        unlink(args->path);
     }
     else {
         if (!args->is_thread) {
@@ -245,8 +243,11 @@ void *install_prog(void* argument)
         }
         else
             log_error("Installation of %s has failed with code 0x%x", args->title_id, progress_info.error_result);
+
     }
 
+    log_info("Deleting PKG %s...", args->path);
+    unlink(args->path);
     log_info("Finalizing Memory...");
     free(args->title_id);
     free(args->path);

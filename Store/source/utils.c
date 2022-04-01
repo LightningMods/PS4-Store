@@ -1173,7 +1173,6 @@ error:
     return ret;
 }
 
-
 void print_memory()
 {
     SceLibcMallocManagedSize ManagedSize;
