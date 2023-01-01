@@ -10,13 +10,13 @@
 */
 
 #include "defines.h"
-
 #include "GLES2_common.h"
 #include "utils.h"
 #include "shaders.h"
-
+#include <stdatomic.h>
+#include <pthread.h>
 // store-clone / v2
-layout_t *left_panel2 = NULL;
+layout_t* left_panel2 = NULL;
 extern vec2 resolution;
 
 /* update field_size for layout: eventually reduce
@@ -48,7 +48,8 @@ void layout_update_sele(layout_t *l, int movement)
     // unconditionally ask to refresh
     l->vbo_s = ASK_REFRESH;
 
-    if(l == icon_panel && l->item_sel.x == 0 && movement == -1)
+    if(l == icon_panel && 
+    l->item_sel.x == 0 && movement == -1)
     {
         // drop aux
         aux = NULL;
@@ -111,7 +112,7 @@ vec4 frect_add_border(vec4 *in, int border)
 }
 
 char selected_text[64];
-
+bool is_sort_panel = false;
 /* default way to deal with text, for layout_t */
 static void layout_compose_text(layout_t *l, int idx, vec2 *pen, bool save_text)
 {
@@ -165,6 +166,9 @@ static void layout_compose_text(layout_t *l, int idx, vec2 *pen, bool save_text)
             {        
                 snprintf(&tmp[0], 63, format, data);
                 //
+                if (l->page_sel.x != 3)
+                    is_sort_panel = false;
+
                 if( save_text )
                     snprintf(&selected_text[0], 63, "%s", tmp);
                 if(l->page_sel.x == 0) // on main page
@@ -175,14 +179,25 @@ static void layout_compose_text(layout_t *l, int idx, vec2 *pen, bool save_text)
                     // one item label per line
                     switch( idx )
                     {
+                        case 1:  ret =   number_of_iapps(APP_PATH("../"));  break; // Installed_Apps has first reserved
                         case 0:  ret =   games->token_c;  break; 
-                        case 1:  ret =  all_apps->token_c;  break; // Installed_Apps has first reserved
                         case 2:  ret =  groups->token_c;  break; // Groups
-                        case 3:  req_status = COMPLETED;  break; // Ready_to_install
-                        case 4:  req_status =   RUNNING;  break; // Queue
+                        case 3: { 
+                            if (get->auto_install)
+                               req_status = INSTALLING_APP;
+                            else
+                                req_status = COMPLETED;
+
+                            break;
+                        }
+                        case 4:  req_status = RUNNING;  break; // Queue
                     }
                     // if requested, count threads
-                    if(req_status) ret = thread_count_by_status( req_status );
+                    if(req_status) {
+                        ret = thread_count_by_status( req_status );
+                        if(idx == 4)
+                            ret += thread_count_by_status( PAUSED );
+                    }
 
                     if(ret > 0) // we counted at least one
                     {
@@ -204,11 +219,12 @@ static void layout_compose_text(layout_t *l, int idx, vec2 *pen, bool save_text)
                     snprintf(&tmp[0], 63, "%d", groups[ idx +1 ].token_c);
                     texture_font_load_glyphs( sub_font, &tmp[0] );
                     pen->x = 460 - tl;
+                    is_sort_panel = false;
                 }
                 // 3 Sort_by uses default
                 if(l->page_sel.x == 3) // on Sot_by page
                 {
-                    
+                    is_sort_panel = true;
                     snprintf(&tmp[0], 63, format, new_panel_text[ 3 ][ idx ]);
                     log_info("new_panel_text[ 3 ][ %i ], %s", idx, new_panel_text[3][idx]);
                     if( save_text )
@@ -243,7 +259,7 @@ static void layout_compose_text(layout_t *l, int idx, vec2 *pen, bool save_text)
                 // zerofill for second line
                 memset(&tmp[0], 0, sizeof(tmp));
                 // get the option value
-                if(idx < NUM_OF_STRINGS && idx != HOME_MENU_SETTING)
+                if(idx < NUM_OF_STRINGS && idx != REFRESH_DB_SETTING)
                 {   // shorten any entry longer than n chars
                     if(strlen(get->opt[ idx ]) > 40) format = "%.40s...";
 
@@ -253,10 +269,9 @@ static void layout_compose_text(layout_t *l, int idx, vec2 *pen, bool save_text)
                 {   // to extend for more options
                     switch(idx)
                     {
-                        case STORE_USB_SETTING: snprintf(&tmp[0], 63, format, get->StoreOnUSB ? getLangSTR(TRUE2) : getLangSTR(FALSE2)); break;
-                        case HOME_MENU_SETTING: snprintf(&tmp[0], 63, format, get->HomeMenu_Redirection ? getLangSTR(ON2) : getLangSTR(OFF2)); break;
-                        case SHOW_INSTALL_PROG: snprintf(&tmp[0], 63, format, get->Show_install_prog  ? getLangSTR(TRUE2) : getLangSTR(FALSE2)); break;
-                        case USE_PIXELSHADER_SETTING: snprintf(&tmp[0], 63, format, use_pixelshader ? getLangSTR(TRUE2) : getLangSTR(FALSE2)); break;
+                        case AUTO_INSTALL_SETTING: snprintf(&tmp[0], 63, format, get->auto_install ? getLangSTR(ON2) : getLangSTR(OFF2)); break;
+                        case REFRESH_DB_SETTING: break;
+                        case LEGACY_INSTALL_PROG: snprintf(&tmp[0], 63, format, get->Legacy_Install  ? getLangSTR(ON2) : getLangSTR(OFF2)); break;
                         default: break;
                     }
                 }
@@ -276,14 +291,6 @@ static void layout_compose_text(layout_t *l, int idx, vec2 *pen, bool save_text)
              snprintf(&selected_text[0], 63, "%s", tmp);
     }
 
-    if(l == ls_p)
-    {
-       vec2 bk =  *pen;
-       bk.x += 55,
-       bk.y += 40; 
-       add_text( l->vbo, sub_font, &tmp[0], &col, &bk);
-       return;
-    }
     // on Settings change color and font for value
     if(l == option_panel)
     {
@@ -316,24 +323,29 @@ static void GLES2_render_selector(layout_t *l, vec4 *rect)
     {   // gles render the selected rectangle
         ORBIS_RenderFillRects(USE_COLOR, &sele, &r, 1);
     }
-    if(l == ls_p // cf Game Options
-    || l == option_panel)
+    if(l == option_panel)
     {   // gles render the selected rectangle
         ORBIS_RenderFillRects(USE_COLOR, &grey, &r, 1);
         // gles render the glowing blue box
         ORBIS_RenderDrawBox(USE_UTIME, &sele, &r);
     }    
 }
-
+#if 0
+void glDeleteTextures1(int unused, GLuint* text) {
+    log_info("fallback_t tex: %i, curr tex %i", fallback_t, *text);
+    glDeleteTextures(1, text), text = 0;
+}
+#endif
 static bool reset_tex_slot(int idx)
 {
     item_t *i = &icon_panel->item_d[ idx ];
 
-    if(i->texture  > 0
-    && i->texture != fallback_t) // keep icon0 template
+    if(i->texture  > GL_NULL
+    && i->texture != fallback_t 
+    && i->png_is_loaded) // keep icon0 template
     {   // discard icon0.png
 //      log_debug( "%s[%3d]: (%d)", __FUNCTION__, idx, i->texture);
-        glDeleteTextures(1, &i->texture), i->texture = 0;
+        glDeleteTextures(1, &i->texture), i->texture = GL_NULL;
         return true;
     }
     return false;
@@ -344,49 +356,127 @@ void drop_some_icon0()
     int count = 0;
     for (int i = 0; i < icon_panel->item_c; i++)
     {   // skip some 
-        if( i < icon_panel->curr_item + icon_panel->f_size
-        &&  i > icon_panel->curr_item - icon_panel->f_size) continue;
+        if( i < icon_panel->curr_item + icon_panel->f_size + 80
+        &&  i > icon_panel->curr_item - icon_panel->f_size - 80) continue;
 
         if( reset_tex_slot(i) ) count++;
     }
 
-    if(count > 0)
+    if(count > GL_NULL)
         log_info( "%s discarded %d textures", __FUNCTION__, count);
 }
 
-void check_n_load_texture(const int idx)
+bool check_n_load_texture(const int idx, texture_load_status_t status)
 {
     // address the item by its index
     item_t *i = &icon_panel->item_d[ idx ];
 
-    if( i->texture == 0 ) // try to load icon0
+    char *path = i->token_d[ PICPATH ].off,
+    *url  = i->token_d[ IMAGE ].off;
+
+    if (status == TEXTURE_LOAD_DEFAULT) {
+        if (i->texture == GL_NULL) {
+            loadmsg(getLangSTR(DL_CACHE));
+            i->texture = fallback_t;
+            i->failed_dl = false;
+            i->png_is_loaded = false;
+            i->update_status = UPDATE_NOT_CHECKED;
+        }
+        return true;
+    }
+    else if( status == TEXTURE_DOWNLOAD 
+    && (i->texture == fallback_t && !i->failed_dl)) // try to load icon0
     {
-        loadmsg(getLangSTR(DL_CACHE));
-        char *path = i->token_d[ PICPATH ].off,
-             *url  = i->token_d[ IMAGE   ].off;
 #if 0 // on pc
         path = strstr(i->token_d[ PICPATH ].off, "storedata");
 #endif
         if( ! if_exists(path) ) // download
         {
+            retry:
             if (strstr(path, "settings.ini") == NULL) {
-                int ret = dl_from_url(url, path, false);
-                if (ret) {
+                int ret = dl_from_url(url, path, NULL, false);
+                if (ret != 0) {
+                    log_error("dl_from_url() failed: %d", ret);
                     i->texture = fallback_t;
+                    i->failed_dl = true;
                 }
-                else goto load_png; // we go there by 0
+                else if(is_png_vaild(path)){
+                   log_info("Downloaded icon %s is vaildated, Loading...", path);
+                   i->png_is_loaded = true;
+                   return true;
+                }
             }
             else
                 msgok(FATAL, "This CDN is not to be trusted, Consider deleting it Now");
         }
-        else
-        {
-load_png:
-            i->texture = load_png_asset_into_texture(path);
+        else if(is_png_vaild(path)){
+            log_info("icon %s is vaild, Loading...", path);
+            i->png_is_loaded = true;
+            return true;
+        }
+        else if (!is_png_vaild(path) && !i->failed_dl){ //try to redownload if it didnt fail to dl before
+            unlink(path);
+            goto retry;
         }
     }
+    else if (status == TEXTURE_LOAD_PNG && i->texture == fallback_t && !i->failed_dl && i->png_is_loaded) {
+        i->texture = load_png_asset_into_texture(path);
+        log_info("%s | %i", path, i->texture);
+        if(i->texture == GL_NULL){
+           i->failed_dl = true;
+        }
+    }
+
     // set the fallback icon0
-    if( i->texture == 0 ) i->texture = fallback_t;
+    if (i->texture == GL_NULL)  i->texture = fallback_t;
+
+    return false;
+}
+
+typedef struct
+{
+    uint64_t numb;
+} search_thread_t;
+
+typedef struct
+{
+    int g_idx,    // item_count
+        f_size;    // field size
+    uint64_t len;
+    bool is_search_q;
+    search_thread_t *llp;
+} dl_thread_t;
+
+atomic_bool is_icons_finished = ATOMIC_VAR_INIT(true);
+atomic_bool icons_thread_started = ATOMIC_VAR_INIT(false);
+
+void *download_icons_thread(void* args) {
+    dl_thread_t* dl_arg = (dl_thread_t *)args;
+
+    if (!dl_arg->is_search_q) {
+        //page icons
+        for (int i = 0; i < dl_arg->f_size; i++){
+            int loop_idx = dl_arg->g_idx + i;
+            check_n_load_texture(loop_idx, TEXTURE_DOWNLOAD);
+           // log_info("%s[%3d]", __FUNCTION__, loop_idx);
+        }
+    }
+    else {
+        //auxiliary search result icons
+        for (int z = 0; z <= dl_arg->len; z++) 
+            check_n_load_texture(dl_arg->llp[z].numb, TEXTURE_DOWNLOAD);
+
+        free(dl_arg->llp);
+    }
+
+    free(dl_arg);
+    is_icons_finished = true;
+    icons_thread_started = false;
+    log_info("icons_thread_started %i %i", is_icons_finished, icons_thread_started);
+    pthread_exit(NULL);
+
+    return NULL;
+
 }
 
 /*
@@ -399,8 +489,17 @@ load_png:
     - this is actually drawing 4 layouts:
       left, icon, cf_game_option, download panels
 */
+int old_idx = -1;
+void* aux_addr = NULL;
+int old_num_of_items = 0;
+
 void GLES2_render_layout_v2(layout_t *l, int unused)
 {
+
+    pthread_t icons_thread = 0;
+    search_thread_t* llp = NULL;
+    dl_thread_t* dl_struct = NULL;
+    int g_idx, loop_idx = -1;
     if( !l ) return;
 
 //  log_info("%s %p %d", __FUNCTION__, l->vbo, l->vbo_s);
@@ -422,19 +521,6 @@ void GLES2_render_layout_v2(layout_t *l, int unused)
     if(l ==     left_panel2
     || l == download_panel )  b1 = (0.),  b2 = (vec2){ 16, 24 };
 
-    if(l == ls_p) /* draw a bg rectangle from bound_box + borders */
-    {
-        p    = (vec2){ l->bound_box.x - b1.x,     l->bound_box.y + b1.y    },
-        s    = (vec2){ l->bound_box.z + b1.x *2, -l->bound_box.w - b1.y *2 };
-        s   += p;
-        r.xy = px_pos_to_normalized(&p),
-        r.zw = px_pos_to_normalized(&s);
-        // temporary vector: use for custom color, normalize 0.f-1.f
-        tv   = (vec4) { 41., 41., 100., 128. } / 256.;
-        // gles render the single rectangle
-        ORBIS_RenderFillRects(USE_COLOR, &tv, &r, 1);
-    }
-
     /* destroy VBO */
     if( l->vbo_s == ASK_REFRESH ) { if(l->vbo) vertex_buffer_delete(l->vbo), l->vbo = NULL; }
 
@@ -450,7 +536,7 @@ void GLES2_render_layout_v2(layout_t *l, int unused)
         curr_page = l->curr_item / (l->fieldsize.x * l->fieldsize.y);
 
     // get global item index: first one for current page
-    int g_idx = curr_page * (l->fieldsize.x * l->fieldsize.y);
+    g_idx = curr_page * (l->fieldsize.x * l->fieldsize.y);
     // but don't consider pages for left_panel!
 
     /* compute normalized rectangle we will draw, once! */
@@ -501,6 +587,9 @@ void GLES2_render_layout_v2(layout_t *l, int unused)
                 if((l != icon_panel)
                 || (l == icon_panel && i == l->f_sele && l == active_p))
                 {
+                   /// if(l->page_sel.x == 3)
+                     //  check_n_load_texture(loop_idx, false);
+
                     layout_compose_text(l, loop_idx, &tp, save_text);
                 }
             }
@@ -514,31 +603,95 @@ void GLES2_render_layout_v2(layout_t *l, int unused)
     {   // read from cached normalized rectangle for more work
         selection_box = l->f_rect[ l->f_sele ];
 
-        if(l == left_panel2)
+        if (l == left_panel2)
         {   // draw the selected rectangle
-            ORBIS_RenderFillRects(USE_COLOR, &grey, &l->f_rect[ l->f_sele ], 1);
+            ORBIS_RenderFillRects(USE_COLOR, &grey, &l->f_rect[l->f_sele], 1);
         }
-
         if(l == icon_panel)
-        {   // draw squared icons
+        {   // draw squared icons 
+
+            ivec2 pi  = (ivec2) { active_p->curr_item, active_p->item_c };
+                      pi /= (ivec2) ( active_p->fieldsize.x * active_p->fieldsize.y );
+                      pi += 1;
+            int vaild_icon_c = 0;
             for(int i = 0; i < l->f_size; i++)
             {
-                int loop_idx = g_idx + i;
-    
-                if(aux && aux->len) // we have an auxiliary result item list to show
-                    loop_idx = aux[ g_idx + i +1 /*skip first*/].len; // read the stored index
+                loop_idx = g_idx + i;
+                
+                if (aux && aux->len) { // we have an auxiliary result item list to show
+                    loop_idx = aux[g_idx + i + 1 /*skip first*/].len; // read the stored indx
 
-#if 1       // use load_n_draw_texture
-                check_n_load_texture(loop_idx);
+                   if(aux != (void*)aux_addr || pi.x != old_num_of_items)
+                     check_n_load_texture(loop_idx, TEXTURE_LOAD_DEFAULT);
+                }
+                else {
+                    if(old_idx != g_idx)
+                       check_n_load_texture(loop_idx, TEXTURE_LOAD_DEFAULT);
+                }
 
-                on_GLES2_Render_icon(USE_COLOR, l->item_d[ loop_idx ].texture, 2, &l->f_rect[ i ], NULL);
 
-#else       // uses cached frects, plus texture from atlas and UVs
-                on_GLES2_Render_icon(USE_COLOR, l->item_d[ loop_idx ].texture, 2, &l->f_rect[ i ],
-                                               &l->item_d[ loop_idx ].uv);
-#endif
+                if (is_sort_panel && !icons_thread_started && is_icons_finished) {
+                    item_t* i = &icon_panel->item_d[loop_idx];
+                    if (i->texture == GL_NULL || (i->texture == fallback_t && !i->failed_dl)) {
+                        check_n_load_texture(loop_idx, TEXTURE_DOWNLOAD);
+                        check_n_load_texture(loop_idx, TEXTURE_LOAD_PNG);
+                    }
+
+                }
+
+               if(!is_sort_panel){
+                  if(check_n_load_texture(loop_idx, TEXTURE_LOAD_PNG)) vaild_icon_c++;
+               }
+
+               //log_info("Count %i, total %i", vaild_icon_c, l->f_size);
+
+               on_GLES2_Render_icon(USE_COLOR, l->item_d[ loop_idx ].texture, 2, &l->f_rect[ i ], NULL);
+
             }
+#ifdef __ORBIS__
             sceMsgDialogTerminate();
+#endif
+            if (aux && aux->len && !icons_thread_started && is_icons_finished &&
+             (aux != (void*)aux_addr || pi.x != old_num_of_items)) {
+
+                is_icons_finished = false;
+                icons_thread_started = true;
+                log_info("old_num_of_items %i, pi.x %i", old_num_of_items, pi.x);
+                old_num_of_items = pi.x;
+                dl_struct = (dl_thread_t*)malloc(sizeof(dl_thread_t));
+                if (dl_struct == NULL) return;
+                llp = (search_thread_t*)calloc(aux->len + 1, sizeof(search_thread_t));
+                if (llp == NULL) return;
+
+                for (int d = 1; d <= aux->len; d++)
+                    llp[d].numb = aux[d /*skip first*/].len; // read the stored index
+
+                log_debug("search_thread_t aux_addr %p, aux: %p", aux_addr, aux); 
+                aux_addr = aux;
+                dl_struct->len = aux->len;
+                dl_struct->is_search_q = true;
+                dl_struct->llp = llp;
+                log_info("[StoreCore][Search] Started Icons thread for %i Search results", aux->len);
+                //next turn off num of dls info for tests
+                pthread_create(&icons_thread, NULL, download_icons_thread, (void*)dl_struct);
+                //  sleep(5);
+            }
+            if (!icons_thread_started && old_idx != g_idx && is_icons_finished && l->f_size > vaild_icon_c) {
+                is_icons_finished = false;
+                icons_thread_started = true;
+
+                dl_struct = (dl_thread_t*)malloc(sizeof(dl_thread_t));
+                if (dl_struct == NULL) return;
+
+                log_info("[StoreCore] Starting Icons thread for %i %i %i", g_idx, !icons_thread_started, !is_icons_finished);
+                old_idx = g_idx;
+                dl_struct->f_size = l->f_size;
+                dl_struct->g_idx = g_idx;
+                //Started Icons thread for 0 1 0
+                dl_struct->is_search_q = false;
+                //next turn off num of dls info for tests
+                pthread_create(&icons_thread, NULL, download_icons_thread, (void*)dl_struct);
+            }
             if(l == active_p)
             {   // add a border to the selection
                 r = frect_add_border(&selection_box, 9);
@@ -547,23 +700,23 @@ void GLES2_render_layout_v2(layout_t *l, int unused)
                 // which is the selected item texture?
                 int sele_idx = g_idx + l->f_sele;
 
-                if(aux && aux->len) // we have an auxiliary serch result item list to show
-                    sele_idx = aux[ g_idx + l->f_sele +1 /* skip 1st */].len; // read the stored index
+                if (aux && aux->len) {// we have an auxiliary serch result item list to show
+                    sele_idx = aux[g_idx + l->f_sele + 1 /* skip 1st */].len; // read the stored index
+                }
+
                 // redraw the selected icon, use stored item_index
                 on_GLES2_Render_icon(USE_COLOR, l->item_d[ sele_idx ].texture, 2, &selection_box, NULL);
             }
         }
 
         // basic
-        if(l == ls_p
-        || l == option_panel)
+        if(l == option_panel)
         {   // draw all the rectangle array by count, at once
             ORBIS_RenderFillRects(USE_COLOR, &c, &l->f_rect[0], l->f_size);
         }
         
         if(l == download_panel)
         {
-            
             // uses cached frects, texture from atlas and UVs
             for(int i = 0; i < l->f_size; i++)
             {   // gles render the outline box

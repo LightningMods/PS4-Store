@@ -1,9 +1,28 @@
 #include <stdarg.h>
 #include <stdlib.h> // calloc
-
+#include "defines.h"
 #pragma once
 
 #include "utils.h"
+#define JOIN_HELPER(x, y) x##y
+#define JOIN(x, y) JOIN_HELPER(x, y)
+#define ALIGN_UP(x, alignment) (((x) + ((alignment) - 1)) & ~((alignment) - 1))
+#define ALIGN_DOWN(x, alignment) ((x) & ~((alignment) - 1))
+#define TYPE_PAD(size) char JOIN(_pad_, __COUNTER__)[size]
+#define TYPE_VARIADIC_BEGIN(name) name { union {
+#define TYPE_BEGIN(name, size) name { union { TYPE_PAD(size)
+#define TYPE_END(...) }; } __VA_ARGS__
+#define TYPE_FIELD(field, offset) struct { TYPE_PAD(offset); field; }
+
+#define SWAP32(x) \
+	((uint32_t)( \
+		(((uint32_t)(x) & UINT32_C(0x000000FF)) << 24) | \
+		(((uint32_t)(x) & UINT32_C(0x0000FF00)) <<  8) | \
+		(((uint32_t)(x) & UINT32_C(0x00FF0000)) >>  8) | \
+		(((uint32_t)(x) & UINT32_C(0xFF000000)) >> 24) \
+	))
+
+#define BE32(x) SWAP32(x)
 
 struct _SceBgftDownloadRegisterErrorInfo {
     /* TODO */
@@ -70,7 +89,14 @@ struct bgft_init_params {
 };
 
 typedef struct install_args {
-    char* title_id; int* task_id; unsigned long size; char* path;  bool is_thread; void* bgft_heap;
+    char* title_id;
+    char* path;
+    char* fname;
+    int task_id;
+    unsigned long size; 
+    void* bgft_heap;
+    dl_arg_t* l;
+    bool is_thread, delete_pkg;
 }install_args;
 
 struct bgft_download_task_progress_info {
@@ -90,7 +116,7 @@ struct bgft_download_task_progress_info {
 
 struct _SceBgftTaskProgress {
     unsigned int bits;
-    int errorResult;
+    int error_result;
     unsigned long length;
     unsigned long transferred;
     unsigned long lengthTotal;
@@ -102,20 +128,70 @@ struct _SceBgftTaskProgress {
     int preparingPercent;
     int localCopyPercent;
 };
+
 typedef struct _SceBgftTaskProgress SceBgftTaskProgress;
+typedef int SceBgftTaskId;
+#define SCE_BGFT_INVALID_TASK_ID (-1)
+
+#define PKG_TITLE_ID_SIZE 0x9
+#define PKG_SERVICE_ID_SIZE 0x13
+#define PKG_CONTENT_ID_SIZE 0x24
+#define PKG_LABEL_SIZE 0x10
+#define PKG_DIGEST_SIZE 0x20
+#define PKG_MINI_DIGEST_SIZE 0x14
+#define PKG_CONTENT_FLAGS_FIRST_PATCH      0x00100000
+#define PKG_CONTENT_FLAGS_PATCHGO          0x00200000
+#define PKG_CONTENT_FLAGS_REMASTER         0x00400000
+#define PKG_CONTENT_FLAGS_PS_CLOUD         0x00800000
+#define PKG_CONTENT_FLAGS_GD_AC            0x02000000
+#define PKG_CONTENT_FLAGS_NON_GAME         0x04000000
+#define PKG_CONTENT_FLAGS_0x8000000        0x08000000 /* has data? */
+#define PKG_CONTENT_FLAGS_SUBSEQUENT_PATCH 0x40000000
+#define PKG_CONTENT_FLAGS_DELTA_PATCH      0x41000000
+#define PKG_CONTENT_FLAGS_CUMULATIVE_PATCH 0x60000000
+#define SIZEOF_PKG_HEADER 0x2000
+
+TYPE_BEGIN(struct pkg_header, SIZEOF_PKG_HEADER);
+TYPE_FIELD(uint8_t magic[4], 0x00);
+TYPE_FIELD(uint32_t entry_count, 0x10);
+TYPE_FIELD(uint16_t sc_entry_count, 0x14);
+TYPE_FIELD(uint32_t entry_table_offset, 0x18);
+TYPE_FIELD(char content_id[PKG_CONTENT_ID_SIZE + 1], 0x40);
+TYPE_FIELD(uint32_t content_type, 0x74);
+TYPE_FIELD(uint32_t content_flags, 0x78);
+TYPE_FIELD(uint64_t package_size, 0x430);
+TYPE_FIELD(uint8_t digest[PKG_DIGEST_SIZE], 0xFE0);
+TYPE_END();
+TYPE_CHECK_SIZE(struct pkg_header, SIZEOF_PKG_HEADER);
+
 
 bool app_inst_util_is_exists(const char* title_id, bool* exists);
 
+int sceBgftServiceDownloadStartTask(SceBgftTaskId taskId);
+int sceBgftServiceDownloadStartTaskAll(void);
+int sceBgftServiceDownloadPauseTask(SceBgftTaskId taskId);
+int sceBgftServiceDownloadPauseTaskAll(void);
+int sceBgftServiceDownloadResumeTask(SceBgftTaskId taskId);
+int sceBgftServiceDownloadResumeTaskAll(void);
+int sceBgftServiceDownloadStopTask(SceBgftTaskId taskId);
+int sceBgftServiceDownloadStopTaskAll(void);
 
+int sceBgftServiceDownloadGetProgress(SceBgftTaskId taskId, SceBgftTaskProgress* progress);
+
+
+int sceBgftFinalize(void);
+
+bool app_inst_util_init(void);
 int sceAppInstUtilInitialize(void);
-int sceAppInstUtilAppInstallPkg(const char* file_path, int reserved);
+int sceAppInstUtilAppInstallPkg(const char* file_path, void* reserved);
 int sceAppInstUtilGetTitleIdFromPkg(const char* pkg_path, char* title_id, int* is_app);
-int sceAppInstUtilCheckAppSystemVer(const char* title_id, uint64_t buf, uint64_t bufs);
+//int sceAppInstUtilCheckAppSystemVer(const char* title_id, uint64_t buf, uint64_t bufs);
 int sceAppInstUtilAppPrepareOverwritePkg(const char* pkg_path);
-int sceAppInstUtilGetPrimaryAppSlot(const char* title_id, unsigned int* slot);
-int sceAppInstUtilAppUnInstall(char* title_id);
-int sceAppInstUtilAppGetSize(const char* title_id, uint64_t buf);
+int sceAppInstUtilGetPrimaryAppSlot(const char* title_id, int* slot);
+int sceAppInstUtilAppUnInstall(const char* title_id);
+int sceAppInstUtilAppGetSize(const char* title_id, uint64_t* buf);
 int sceBgftServiceInit(struct bgft_init_params*  params);
 int sceBgftServiceIntDownloadRegisterTaskByStorageEx(struct bgft_download_param_ex* params, int* task_id);
 int sceBgftServiceDownloadStartTask(int task_id);
-void sceBgftFinalize(void);
+int sceBgftServiceTerm(void);
+uint32_t pkginstall(const char *fullpath, dl_arg_t* ta, bool Auto_install);

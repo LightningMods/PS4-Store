@@ -1,19 +1,18 @@
 #pragma once
 
 #include "md5.h"
-#include <libSceSysmodule.h>
 #include <CommonDialog.h>
-#include <libkernel.h>
 #include <orbis/libkernel.h>
-#include <orbislink.h>
+#include <orbis/Sysmodule.h>
 #include <sys/mman.h>
 
 #include <stdio.h>
 #include <string.h>
 #include <Http.h>
 #include <Ssl.h>
-#include <sys/_types.h>
-#include <sys/fcntl.h> //O_CEAT
+#include <fcntl.h> //O_CEAT
+#include <stdbool.h>
+#include <unistd.h>
 
 #define SCE_KERNEL_MAX_MODULES 256
 #define SCE_KERNEL_MAX_NAME_LENGTH 256
@@ -146,6 +145,18 @@ void logshit(char* format, ...);
 #define BUILD_DAY_CH0 ((__DATE__[4] >= '0') ? (__DATE__[4]) : '0')
 #define BUILD_DAY_CH1 (__DATE__[ 5])
 
+int sceKernelMmap(
+    void *addr, 
+    size_t len, 
+    int prot, 
+    int flags, 
+    int fd, 
+    off_t offset, 
+    void **res
+);
+
+int sceNetPoolDestroy();
+int sceNetTerm();
 
 
 // Example of __TIME__ string: "21:06:19"
@@ -219,18 +230,54 @@ enum STR_type
 typedef struct
 {
     char* opt[NUM_OF_STRINGS];
-    bool   StoreOnUSB, Legacy, SECURE_BOOT, HomeMenu_Redirection, Daemon_on_start, Show_install_prog, Copy_INI;
+    bool   StoreOnUSB, SECURE_BOOT, Show_install_prog, Copy_INI;
     // more options
 } StoreLoaderOptions;
 
+
+void* syscall1(
+	uint64_t number,
+	void* arg1
+);
+
+void* syscall2(
+	uint64_t number,
+	void* arg1,
+	void* arg2
+);
+
+void* syscall3(
+	uint64_t number,
+	void* arg1,
+	void* arg2,
+	void* arg3
+);
+
+void* syscall4(
+	uint64_t number,
+	void* arg1,
+	void* arg2,
+	void* arg3,
+	void* arg4
+);
+
+void* syscall5(
+	uint64_t number,
+	void* arg1,
+	void* arg2,
+	void* arg3,
+	void* arg4,
+	void* arg5
+);
+
 int msgok(char* format, ...);
 int loadmsg(char* format, ...);
-int pingtest(int libnetMemId, int libhttpCtxId, const char* src);
-int download_file(int libnetMemId, int libhttpCtxId, const char* src, const char* dst);
+int progstart(char* msg);
+int pingtest(const char* server);
+long download_file(const char* src, const char* dst);
 int32_t netInit(void);
+int32_t sceSystemServiceLoadExec(const char* eboot, const char* argv[]);
 void logshit(char* format, ...);
 void init_STOREGL_modules();
-int pl_ini_load(pl_ini_file* file, const char* path);
-int pl_ini_get_string(const pl_ini_file* file, const char* section, const char* key, const char* default_value, char* copy_to, int dest_len);
-int sceKernelDebugOutText(int DBG_CHANNEL, const char* text);
+int sceKernelDebugOutText(int dbg_channel, const char* text, ...);
 

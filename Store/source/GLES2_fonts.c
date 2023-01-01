@@ -9,7 +9,13 @@
 #include <unistd.h>
 
 #include "defines.h"
+#ifdef __ORBIS__
 #include "shaders.h"
+#else
+#include "pc_shaders.h"
+#endif
+#include "GLES2_common.h"
+#include "utils.h"
 
 // ft-gl: main, from demo-font.c
 extern GLuint shader;
@@ -160,7 +166,7 @@ void GLES2_fonts_from_ttf(const char *path)
 
 default_embedded: // fallback on error
 
-        ttf  = &font_ttf[0];
+        ttf  = (void*)&font_ttf[0];
         size =  font_len;
     }
     // recreate global glyph atlas
@@ -172,7 +178,9 @@ default_embedded: // fallback on error
         char tmp[256];
         snprintf(&tmp[0], 255, "%s %s %s", __FUNCTION__, getLangSTR(CANT_OPEN),path);
         msgok(WARNING, tmp);
+        #ifdef __ORBIS__
         sceKernelIccSetBuzzer(3);
+        #endif
         // go back and fallback to default font
         goto default_embedded;
     }

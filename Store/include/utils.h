@@ -2,13 +2,19 @@
 
 #include "defines.h"
 #include "ini.h"
-#include <dialog.h>
 #include <sys/param.h>   // MIN
 #include "log.h"
-#include <sys/_iovec.h>
 #include "lang.h"
-#include <user_mem.h> 
 #include <sqlite3.h>
+#include <stdatomic.h>
+#include  "GLES2_common.h"
+#include "utils.h"
+
+#ifdef __ORBIS__
+#include <user_mem.h> 
+#include "installpkg.h"
+#include <dialog.h>
+#endif
 
 #define DIM(x)  (sizeof(x)/sizeof(*(x)))
 #define KB(x)   ((size_t) (x) << 10)
@@ -37,9 +43,9 @@
 #define SQL_SELECT_ROW_BY_NUMB "SELECT * WHERE pid LIKE "
 // Supply a Number
 #define SQL_SELECT_NAME_BY_ROW_NUMB "SELECT name WHERE pid LIKE "
-
+#define ORBIS_SYSMODULE_MESSAGE_DIALOG 0x00A4 // libSceMsgDialog.sprx
 //DATABASE STORE USES
-#define SQL_STORE_DB "/user/app/NPXS39041/store.db"
+#define SQL_STORE_DB APP_PATH("store.db")
 
 
 extern sqlite3* db;
@@ -53,11 +59,20 @@ int SQL_Get_Count(void);
 | =============================
 */
 
+struct AppStatus
+{
+    int appId;
+    int launchRequestAppId;
+    char appType;
+};
+
 enum MSG_DIALOG {
     NORMAL,
     FATAL,
     WARNING
 };
+
+extern uint32_t daemon_appid;
 
 
 enum SORT_APPS_BY {
@@ -115,14 +130,14 @@ typedef union SceNetCtlInfo {
     uint16_t http_proxy_port;
 } SceNetCtlInfo;
 
-
 #define STORE_MAX_LIMIT_PAGES 1000
-#define PAGE_SIZE 15
-#define STORE_LOG "/user/app/NPXS39041/logs/log.txt"
+#define STORE_PAGE_SIZE 15
+#define STORE_LOG "/user/app/NPXS39041/logs/store.log"
 #define STANDALONE_APP 0
 #define DAEMON_PATH "/system/vsh/app/ITEM00002"
 #define DAEMON_INI_DOESNT_EXIST 0
-
+#define PENDING_DOWNLOADS -999
+#define UNUSED(x) (void)(x)
 //#define assert(expr) if (!(expr)) msgok(FATAL, "Assertion Failed!");
 
 enum Flag
@@ -183,7 +198,7 @@ enum CHECK_OPTS
 typedef struct
 {
     char *opt[ NUM_OF_STRINGS ];
-    bool   StoreOnUSB, Legacy, HomeMenu_Redirection, Daemon_on_start, Show_install_prog;
+    atomic_bool auto_install, Legacy_Install;
     int lang;
     // more options
 } StoreOptions;
@@ -191,13 +206,14 @@ typedef struct
 // the Settings
 extern StoreOptions set,
 * get;
-
-char *usbpath(void);
+ 
 bool LoadOptions(StoreOptions *set);
 bool SaveOptions(StoreOptions *set);
 
-char *StoreKeyboard(const char *Title, char *initialTextBuffer);
-
+bool Keyboard(const char* Title, const char* initialTextBuffer, char* out_buffer, bool is_url);
+char* StoreKeyboard(const char* Title, char* initialTextBuffer);
+int sceMsgDialogTerminate();
+void CheckUpdate(const char* tid, item_t *li);
 
 // sysctl
 uint32_t SysctlByName_get_sdk_version(void);
@@ -205,13 +221,55 @@ uint32_t SysctlByName_get_sdk_version(void);
 char *calculateSize(uint64_t size);
 
 extern bool is_connected_app;
-void  msgok(enum MSG_DIALOG level, char* format, ...);
-void  loadmsg(char* format, ...);
+void  msgok(enum MSG_DIALOG level, const char* format, ...);
+void  loadmsg(const char* format, ...);
+void drop_some_icon0();
 long CalcAppsize(char *path);
 char* cutoff(const char* str, int from, int to);
+bool touch_file(char* destfile);
+int sql_index_tokens(layout_t* l, int count);
 
+
+void* syscall1(
+	uint64_t number,
+	void* arg1
+);
+
+void* syscall2(
+	uint64_t number,
+	void* arg1,
+	void* arg2
+);
+
+void* syscall3(
+	uint64_t number,
+	void* arg1,
+	void* arg2,
+	void* arg3
+);
+
+void* syscall4(
+	uint64_t number,
+	void* arg1,
+	void* arg2,
+	void* arg3,
+	void* arg4
+);
+
+void* syscall5(
+	uint64_t number,
+	void* arg1,
+	void* arg2,
+	void* arg3,
+	void* arg4,
+	void* arg5
+);
+void trigger_dump_frame();
+void print_memory();
+void dump_frame(void);
 int getjson(int Pagenumb, char* cdn, bool legacy);
 bool MD5_hash_compare(const char* file1, const char* hash);
+void CheckUpdate(const char* tid, item_t *li);
 int copyFile(char* sourcefile, char* destfile);
 void ProgSetMessagewText(int prog, const char* fmt, ...);
 bool app_inst_util_uninstall_patch(const char* title_id, int* error);
@@ -237,39 +295,6 @@ uint32_t Launch_App(char* TITLE_ID, bool silent);
 int mountfs(const char* device, const char* mountpoint, const char* fstype, const char* mode, uint64_t flags);
 int check_free_space(const char* mountPoint);
 extern bool dump;
-#define MAX_MESSAGE_SIZE    0x1000
-#define MAX_STACK_FRAMES    60
-
-/**
- * A callframe captures the stack and program pointer of a
- * frame in the call path.
- **/
-typedef struct {
-    void* sp;
-    void* pc;
-} callframe_t;
-
-typedef struct {
-    void* unk01;
-    void* unk02;
-    off_t offset;
-    int unk04;
-    int unk05;
-    unsigned isFlexibleMemory : 1;
-    unsigned isDirectMemory : 1;
-    unsigned isStack : 1;
-    unsigned isPooledMemory : 1;
-    unsigned isCommitted : 1;
-    char name[32];
-} OrbisKernelVirtualQueryInfo;
-
-typedef struct OrbisUserServiceLoginUserIdList {
-	int32_t userId[4];
-}  OrbisUserServiceLoginUserIdList;
-
-typedef struct OrbisUserServiceInitializeParams {
-	int32_t priority;
-} OrbisUserServiceInitializeParams;
 
 #define SCE_LNC_UTIL_ERROR_ALREADY_RUNNING 0x8094000c
 
@@ -277,4 +302,12 @@ extern char* title[300];
 extern char* title_id[30]; 
 
 void SIG_Handler(int sig_numb);
-
+const char* Language_GetName(int m_Code);
+unsigned int usbpath();
+int progstart(char* format, ...);
+void loadModulesVanilla();
+int number_of_iapps(const char *path);
+bool init_curl();
+int syscall_alt(long num, ...);
+void* prx_func_loader(const char* prx_path, const char* symbol);
+bool pingtest(const char* server);

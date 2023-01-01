@@ -6,6 +6,7 @@
 
 #include "defines.h"
 #include "shaders.h"
+#include "GLES2_common.h"
 
 extern vec2 resolution;
 
@@ -15,8 +16,6 @@ extern vec2 resolution;
 
     we "trig it" to do following this flow
  */
-
-#include <user_mem.h>
 
 GLuint renderedTexture = 0;     // The texture we're going to render to
 int *dump_buffer       = NULL;  // never free, but reuse it
@@ -40,9 +39,11 @@ void save_dumped_frame(void)
     strftime(s, sizeof(s), "%y%m%d-%H%M%S", tm); // custom date string
     //log_debug( "%s", s);
 
-    if( usbpath() )
+    if( usbpath() != -1)
     {
-        snprintf(&tmp[0], 255, "%s/Store-%s.png", usbpath(), s);
+        sprintf(&tmp[0], "/mnt/usb%i/Store/", usbpath());
+        mkdir(&tmp[0], 0777);
+        sprintf(&tmp[0], "/mnt/usb%i/Store/Store-%s.png", usbpath(), s);
 #if 0
         // plain save binary blob to file, tested
         FILE   *fp = fopen( tmp, "wb" );
@@ -52,8 +53,6 @@ void save_dumped_frame(void)
 #else
         writeImage(&tmp[0], resolution.x, resolution.y, dump_buffer, "HB Store");
 #endif
-        // feedback!
-        ani_notify("Frame dumped!");
     }
 }
 

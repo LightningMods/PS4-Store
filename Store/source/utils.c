@@ -1,20 +1,27 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "utils.h"
-#include <pl_ini.h>
+#include "ini.h"
 #include <md5.h>
 #include <errno.h>
 #include <sys/time.h>
 #include <stdlib.h>
 #include "log.h"
 #include "defines.h"
-#include <user_mem.h> 
+#include <orbis/SystemService.h>
+#include <orbis/libkernel.h>
+
+#include <dirent.h>
+#include "GLES2_common.h"
+#include "dialog.h"
+//#include <sys/sysctl.h>
 
 StoreOptions set,
             *get;
 
 extern LangStrings* stropts;
-
+extern layout_t* download_panel;
+extern char* download_panel_text[];
 void* __stack_chk_guard = (void*)0xdeadbeef;
 
 void __stack_chk_fail(void)
@@ -24,9 +31,10 @@ void __stack_chk_fail(void)
 }
 
 extern item_t* all_apps; // Installed_Apps
+extern bool sceAppInst_done;
 
 
-bool sceAppInst_done = false;
+bool unsafe_source = false;
 int Lastlogcheck = 0;
 static const char     *sizes[] = { "EiB", "PiB", "TiB", "GiB", "MiB", "KiB", "B" };
 static const uint64_t  exbibytes = 1024ULL * 1024ULL * 1024ULL *
@@ -112,6 +120,28 @@ int64_t sys_dynlib_unload_prx(int64_t prxID)
     return (int64_t)syscall1(595, (void*)prxID);
 }
 
+void* prx_func_loader(const char* prx_path, const char* symbol) {
+
+    void* addrp = NULL;
+    log_info("Loading %s", prx_path);
+     
+    int libcmi = sceKernelLoadStartModule(prx_path, 0, NULL, 0, 0, 0);
+    if(libcmi < 0){
+        log_error("Error loading prx: 0x%X", libcmi);
+        return addrp;
+    }
+    else
+        log_debug("%s loaded successfully", prx_path);
+
+    if(sceKernelDlsym(libcmi, symbol, &addrp) < 0){
+        log_error("Symbol %s NOT Found", symbol);
+    }
+    else
+        log_debug("Function %s | addr %p loaded successfully", symbol, addrp);
+
+    return addrp;
+}
+
 
 int64_t sys_dynlib_dlsym(int64_t moduleHandle, const char* functionName, void* destFuncOffset)
 {
@@ -141,9 +171,7 @@ unsigned int get_time_ms(void)
     return (tv.tv_sec * 1000) + (tv.tv_usec / 1000);
 }
 
-
-
-static bool touch_file(char* destfile)
+bool touch_file(char* destfile)
 {
     int fd = open(destfile, O_WRONLY | O_CREAT | O_TRUNC, 0777);
     if (fd > 0) {
@@ -154,56 +182,43 @@ static bool touch_file(char* destfile)
         return false;
 }
 
-char* usbpath()
+#define SCE_KERNEL_EVF_WAITMODE_OR 0x02
+unsigned char _bittest64(uint64_t *Base, uint64_t Offset)
 {
-    static char usbbuf[100];
-    usbbuf[0] = '\0';
-    for(int x = 0; x <= 7; x++)
-    {
-        snprintf(usbbuf, sizeof(usbbuf), "/mnt/usb%i/.dirtest", x);
-        if(touch_file(usbbuf))
-        {
-            snprintf(usbbuf, 100, "/mnt/usb%i", x);
-
-            log_info("found usb. = %s", usbbuf);
-            return usbbuf;
-        }
-    }
-    log_warn( "FOUND NO USB");
-
-    return "";
+  int old = 0;
+  __asm__ __volatile__("btq %2,%1\n\tsbbl %0,%0 "
+    :"=r" (old),"=m" ((*(volatile long long *) Base))
+    :"Ir" (Offset));
+  return (old != 0);
 }
 
-bool MD5_hash_compare(const char* file1, const char* hash)
+
+unsigned int sceShellCoreUtilIsUsbMassStorageMounted_func(unsigned int usb_index)
 {
-    unsigned char c[MD5_HASH_LENGTH];
-    FILE* f1 = fopen(file1, "rb");
-    MD5_CTX mdContext;
+  uint64_t res;
+  void* ef; 
 
-    int bytes = 0;
-    unsigned char data[1024];
+  if ( (unsigned int)sceKernelOpenEventFlag(&ef, "SceAutoMountUsbMass") )
+    return 0;
+  sceKernelPollEventFlag(ef, 0xFFFFFFF, SCE_KERNEL_EVF_WAITMODE_OR, &res);
+  sceKernelCloseEventFlag(ef);
 
-    MD5_Init(&mdContext);
-    while ((bytes = fread(data, 1, 1024, f1)) != 0)
-        MD5_Update(&mdContext, data, bytes);
-    MD5_Final(c, &mdContext);
+  return _bittest64(&res, usb_index);
+}
 
-    char md5_string[33] = {0};
+unsigned int usbpath()
+{
+    unsigned int usb_index = -1;
 
-    for(int i = 0; i < 16; ++i) {
-        snprintf(&md5_string[i*2], 32, "%02x", (unsigned int)c[i]);
+    for (int i = 0; i < 8; i++){
+        if (sceShellCoreUtilIsUsbMassStorageMounted_func((unsigned int)i)){
+              usb_index = i;
+              //log_info("[UTIL] USB %i is mounted, SceAutoMountUsbMass: %i", i, usb_number);
+              break;
+        }
     }
-    log_info( "FILE HASH: %s", md5_string);
-    md5_string[32] = 0;
 
-    if (strcmp(md5_string, hash) != 0) {
-        return DIFFERENT_HASH;
-    }
-
-    log_info( "Input HASH: %s", hash);
-    fclose(f1);
-
-    return SAME_HASH;
+    return usb_index;
 }
 
 
@@ -220,112 +235,10 @@ bool is_apputil_init()
     return true;
 }
 
-
-bool app_inst_util_uninstall_patch(const char* title_id, int* error) {
-    int ret;
-
-    if(!sceAppInst_done)
-    {
-        bool res = is_apputil_init();
-        if (!res)
-        {  *error = 0xDEADBEEF;
-           return false;
-        }
-    }
-    if (!title_id) {
-        ret = 0x80020016;
-        if (error) {
-            *error = ret;
-        }
-        goto err;
-    }
-
-    ret = sceAppInstUtilAppUnInstallPat(title_id);
-    if (ret)
-    {
-        if (error) {
-            *error = ret;
-        }
-        log_error( "sceAppInstUtilAppUnInstallPat failed: 0x%08X", ret);
-        goto err;
-    }
-
-    return true;
-
-err:
-    return false;
-}
-
-
-bool app_inst_util_uninstall_game(const char *title_id, int *error)
-{
-    int ret;
-
-    if (strlen(title_id) != 9)
-    {
-        *error = 0xBADBAD;
-        return false;
-    }
-    if(!sceAppInst_done)
-    {
-        bool res = is_apputil_init();
-        if (!res)
-        {  *error = 0xDEADBEEF;
-           return false;
-        }    
-    }
-
-    if (!title_id)
-    {
-        ret = 0x80020016;
-        if (error)
-        {
-            *error = ret;
-        }
-        goto err;
-    }
-
-    ret = sceAppInstUtilAppUnInstall(title_id);
-    if (ret)
-    {
-        if (error)
-        {
-            *error = ret;
-        }
-        log_error( "sceAppInstUtilAppUnInstall failed: 0x%08X", ret);
-        goto err;
-    }
-
-    return true;
-
-err:
-    return false;
-}
-
-int app_inst_util_get_size(const char* title_id) {
-    uint64_t size = 0;
-
-    if (!sceAppInst_done) {
-        log_debug("Starting app_inst_util_init..");
-        if (!app_inst_util_init()) {
-            log_error("app_inst_util_init has failed...");
-            return size;
-        }
-    }
-
-    int ret = sceAppInstUtilAppGetSize(title_id, &size);
-    if (ret)
-        log_error("sceAppInstUtilAppGetSize failed: 0x%08X", ret);
-    else
-        log_info("Size: %s", calculateSize(size));
-   
-    return B2GB(size);
-}
-
 bool Fnt_setting_enabled = false;
 
 static int print_ini_info(void* user, const char* section, const char* name,
-    const char* value)
+    const char* value, int idc_2)
 {
     static char prev_section[50] = "";
 
@@ -340,10 +253,7 @@ static int print_ini_info(void* user, const char* section, const char* name,
 
 #define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
 
-    if (MATCH("Settings", "Daemon_on_start")) {
-        set->Daemon_on_start = atoi(value);
-    }
-    else if (MATCH("Settings", "CDN")) {
+    if (MATCH("Settings", "CDN")) {
         strcpy(set->opt[CDN_URL], value);
     }
     else if (MATCH("Settings", "TTF_Font")) {
@@ -355,17 +265,11 @@ static int print_ini_info(void* user, const char* section, const char* name,
     else if (MATCH("Settings", "temppath")) {
         strcpy(set->opt[TMP_PATH], value);
     }
-    else if (MATCH("Settings", "Legacy")) {
-        set->Legacy = atoi(value);
+    else if (MATCH("Settings", "auto_install")) {
+        set->auto_install = atoi(value);
     }
-    else if (MATCH("Settings", "StoreOnUSB")) {
-        set->StoreOnUSB = atoi(value);
-    }
-    else if (MATCH("Settings", "HomeMenu_Redirection")) {
-        set->HomeMenu_Redirection = atoi(value);
-    }
-    else if (MATCH("Settings", "Show_install_prog")) {
-        set->Show_install_prog = atoi(value);
+    else if (MATCH("Settings", "Legacy_Install")) {
+        set->Legacy_Install = atoi(value);
     }
 #if BETA==1
     else if (MATCH("Settings", "BETA_KEY")) {
@@ -381,6 +285,7 @@ bool LoadOptions(StoreOptions *set)
 {
     bool no_error = true;
     int error = 1;
+    unsigned int usb_num = usbpath();
 
     for (int i = 0; i < NUM_OF_STRINGS; i++) {
         if (set->opt[i] != NULL)
@@ -391,35 +296,32 @@ bool LoadOptions(StoreOptions *set)
         set->opt[ i ] = calloc(256, sizeof(char));
     }
 
-    strcpy(set->opt[CDN_URL], "http://api.pkg-zone.com");
-    set->Daemon_on_start = true;
-    set->Legacy = false;
-    set->StoreOnUSB = false;
-    set->HomeMenu_Redirection = false;
-    set->Show_install_prog = true;
+    strcpy(set->opt[CDN_URL], "https://api.pkg-zone.com");
+    set->auto_install = true;
+    set->Legacy_Install = false;
     strcpy(set->opt[TMP_PATH], "/user/app/NPXS39041/downloads");
     strcpy(set->opt[FNT_PATH], "/system_ex/app/NPXS20113/bdjstack/lib/fonts/SCE-PS3-RD-R-LATIN.TTF");
 
     /* Initialize INI structure */
     char buff[257];
-    if (strstr(usbpath(), "/mnt/usb"))
-    {
-        snprintf(buff, 256, "%s/settings.ini", usbpath());
+    sprintf(&buff[0], "/mnt/usb%d/settings.ini", usb_num);
 
-        if (!if_exists(buff))
+    if (usb_num != -1)
+    {
+        if (!if_exists(&buff[0]))
         {
             log_warn( "No INI on USB");
             if (if_exists("/user/app/NPXS39041/settings.ini")) {
-                snprintf(set->opt[INI_PATH], 255, "%s", "/user/app/NPXS39041/settings.ini");
+                snprintf(set->opt[INI_PATH], sizeof(buff), "%s", "/user/app/NPXS39041/settings.ini");
                 error = ini_parse("/user/app/NPXS39041/settings.ini", print_ini_info, set);
                 if (error) log_error("Bad config file (first error on line %d)!\n", error);
             }
 
         } else {
-            error = ini_parse(buff, print_ini_info, set);
+            error = ini_parse(&buff[0], print_ini_info, set);
             if (error) log_error("Bad config file (first error on line %d)!\n", error);
             log_info( "Loading ini from USB");
-            snprintf(set->opt[INI_PATH], 255, "%s", buff);
+            snprintf(set->opt[INI_PATH], sizeof(buff), "%s", &buff[0]);
         }
     }
     else if (!if_exists("/user/app/NPXS39041/settings.ini"))
@@ -430,9 +332,12 @@ bool LoadOptions(StoreOptions *set)
         if (error) log_error("Bad config file (first error on line %d)!\n", error);
         log_info( "Loading ini from APP DIR");
         
-        snprintf(set->opt[INI_PATH], 255, "%s", "/user/app/NPXS39041/settings.ini");
+        snprintf(set->opt[INI_PATH], sizeof(buff), "%s", "/user/app/NPXS39041/settings.ini");
     }
     
+    if(strstr(set->opt[CDN_URL], "pkg-zone.com") == NULL)
+       unsafe_source = true;
+
     uint32_t lang = PS4GetLang();
     if (error) 
         log_error("ERROR reading INI setting default vals");
@@ -505,14 +410,13 @@ bool LoadOptions(StoreOptions *set)
     log_info( "set->opt[FNT_PATH]: %s", set->opt[FNT_PATH]);
     log_info( "set->opt[TMP_PATH]: %s", set->opt[TMP_PATH]);
     log_info( "set->opt[CDN_URL ]: %s", set->opt[CDN_URL]);
-    log_info( "set->legacy       : %i", set->Legacy);
-    log_info( "set->Daemon_...   : %s", set->Daemon_on_start ? "ON" : "OFF");
-    log_info( "set->HomeMen...   : %s", set->HomeMenu_Redirection ? "ItemzFlow (ON)" : "Orbis (OFF)");
-    log_info( "set->StoreOnUSB   : %i", set->StoreOnUSB);
-    log_info( "set->Install_prog.: %s", set->Show_install_prog ? "ON" : "OFF");
+    log_info( "set->auto_install   : %i", set->auto_install);
+    log_info( "set->Legacy_Install.: %s", set->Legacy_Install ? "ON" : "OFF");
     log_info( "set->Lang         : %s : %i", Language_GetName(lang), set->lang);
+    log_info( "Unsafe Sources    : %i", unsafe_source);
 
-
+//strcpy(set->opt[CDN_URL], "https://api.pkg-zone.com");
+   // strcpy(set->opt[CDN_URL], "https://api.pkg-zone.com");
 
     return no_error;
 }
@@ -539,14 +443,14 @@ bool SaveOptions(StoreOptions *set)
 {  
     bool no_error = true;
 
-    char* buff[4084];
-    memset(buff, 0, 4084);
-    snprintf(buff, 4083, "[Settings]\nCDN=%s\nSecure_Boot=1\ntemppath=%s\nTTF_Font=%s\nStoreOnUSB=%i\nShow_install_prog=%i\nHomeMenu_Redirection=%i\nDaemon_on_start=%i\nLegacy=%i\n", set->opt[CDN_URL], set->opt[TMP_PATH], set->opt[FNT_PATH], set->StoreOnUSB, set->Show_install_prog, set->HomeMenu_Redirection, set->Daemon_on_start, set->Legacy);
+    char buff[4084];
+    memset(&buff[0], 0, 4084);
+    snprintf(&buff[0], 4083, "[Settings]\nCDN=%s\nSecure_Boot=1\ntemppath=%s\nTTF_Font=%s\nauto_install=%i\nLegacy_Install=%i\n", set->opt[CDN_URL], set->opt[TMP_PATH], set->opt[FNT_PATH], set->auto_install, set->Legacy_Install);
 
     int fd = open(set->opt[INI_PATH], O_WRONLY | O_CREAT | O_TRUNC, 0777);
     if (fd >= 0)
     {
-        write(fd, buff, strlen(buff));
+        write(fd, &buff[0], strlen((const char*)&buff[0]));
         close(fd);
     }
     else
@@ -557,9 +461,8 @@ bool SaveOptions(StoreOptions *set)
     log_info( "set->opt[TMP_PATH]: %s", set->opt[TMP_PATH]);
     log_info( "set->opt[FNT_PATH]: %.20s...", set->opt[FNT_PATH]);
     log_info( "set->opt[CDN_URL ]: %s", set->opt[CDN_URL ]);
-    log_info( "set->StoreOnUSB   : %i", set->StoreOnUSB);
-    log_info( "set->HomeMen...   : %s", set->HomeMenu_Redirection ? "ItemzFlow (ON)" : "Orbis (OFF)");
-    log_info( "set->Install_prog : %s", set->Show_install_prog ? "ON" : "OFF");
+    log_info( "set->auto_install   : %i", set->auto_install);
+    log_info( "set->Install_prog : %s", set->Legacy_Install ? "ON" : "OFF");
 
 
     /* Load values */
@@ -568,8 +471,8 @@ bool SaveOptions(StoreOptions *set)
     return no_error;
 }
 
-uint32_t sdkVersion = -1;
-
+static uint32_t sdkVersion = -1;
+int	sysctlbyname(const char *, void *, size_t *, const void *, size_t);
 uint32_t SysctlByName_get_sdk_version(void)
 {
     //cache the FW Version
@@ -583,10 +486,9 @@ uint32_t SysctlByName_get_sdk_version(void)
     // FW Returned is in HEX
     return sdkVersion;
 }
-
+char     result[40];
 char *calculateSize(uint64_t size)
 {
-    char     *result = (char *)malloc(sizeof(char) * 32);
     uint64_t  multiplier = exbibytes;
     int i;
 
@@ -600,8 +502,8 @@ char *calculateSize(uint64_t size)
             snprintf(result, sizeof(char) * 31, "%.1f %s", (float)size / multiplier, sizes[i]);
         return result;
     }
-    strcpy(result, "0");
-    return result;
+    strcpy(&result[0], "0");
+    return &result[0];
 }
 
 
@@ -660,11 +562,10 @@ void die(char* message)
     sceSystemServiceLoadExec("INVALID", 0);
 }
 
-void msgok(enum MSG_DIALOG level, char* format, ...)
+void msgok(enum MSG_DIALOG level, const char* format, ...)
 {
     if(strlen(format) > 301) return;
 
-    int ret = 0;
     sceSysmoduleLoadModule(ORBIS_SYSMODULE_MESSAGE_DIALOG);
 
     sceMsgDialogTerminate();
@@ -748,7 +649,7 @@ void msgok(enum MSG_DIALOG level, char* format, ...)
     return;
 }
 
-void loadmsg(char* format, ...)
+void loadmsg(const char* format, ...)
 {
     if(strlen(format) > 1024) return;
 
@@ -796,6 +697,339 @@ void loadmsg(char* format, ...)
     return;
 }
 
+bool Keyboard(const char* Title, const char* initialTextBuffer, char* out_buffer, bool is_url)
+{
+    sceSysmoduleLoadModule(ORBIS_SYSMODULE_IME_DIALOG);
+
+    wchar_t title[100];
+    wchar_t inputTextBuffer[255];
+    char    titl[100];
+
+    log_info("Keyboard(%s, %s, %p, %s)", Title, initialTextBuffer, out_buffer, is_url ? "true" : "false");
+
+    if (initialTextBuffer && strlen(initialTextBuffer) > 254) return false;
+
+    memset(&inputTextBuffer[0], 0, sizeof(inputTextBuffer));
+    memset(&titl[0], 0, sizeof(titl));
+    memset(&title[0], 0, sizeof(title));
+
+    size_t (*PS4_wcstombs)(char* dest, const wchar_t* src, size_t max) = prx_func_loader("libSceLibcInternal.sprx", "wcstombs");
+    size_t (*PS4_mbstowcs)(wchar_t* dest, const char* src, size_t max) = prx_func_loader("libSceLibcInternal.sprx", "mbstowcs");
+    if(!PS4_wcstombs || !PS4_mbstowcs) {
+        log_fatal("wcstombs or mbstowcs not found");
+        return false;
+    }
+
+    if (initialTextBuffer) strncpy(out_buffer, initialTextBuffer, 254);
+    //converts the multibyte string src to a wide-character string starting at dest.
+    PS4_mbstowcs(&inputTextBuffer[0], out_buffer, strlen(out_buffer));
+    // use custom title
+    strncpy(&titl[0], Title ? Title : "Store Keyboard", sizeof titl - 1);
+    //converts the multibyte string src to a wide-character string starting at dest.
+    PS4_mbstowcs(&title[0], &titl[0], strlen(&titl[0]));
+
+    OrbisImeDialogParam param;
+    memset(&param, 0, sizeof(OrbisImeDialogParam));
+   // msgok(NORMAL, "title: %ls inputTextBuffer: %ls", &title[0], &inputTextBuffer[0]);
+
+    param.maxTextLength = 254;
+    param.inputTextBuffer = &inputTextBuffer[0];
+    param.title = &title[0];
+    param.userId = 0xFE;
+    param.type = is_url ? ORBIS_IME_TYPE_URL : ORBIS_IME_TYPE_BASIC_LATIN;
+    param.enterLabel = ORBIS_IME_ENTER_LABEL_DEFAULT;
+
+    sceImeDialogInit(&param, NULL);
+
+    int status;
+    while (1)
+    {
+        status = sceImeDialogGetStatus();
+
+        if (status == ORBIS_IME_DIALOG_STATUS_FINISHED)
+        {
+            OrbisImeDialogResult result;
+            memset(&result, 0, sizeof(OrbisImeDialogResult));
+            sceImeDialogGetResult(&result);
+            log_info("status %i, endstatus %i ", status, result.endstatus);
+
+            if (result.endstatus == ORBIS_IME_DIALOG_END_STATUS_USER_CANCELED){
+                log_info("User Cancelled this Keyboard Session");
+            }
+            else if (result.endstatus == ORBIS_IME_DIALOG_END_STATUS_OK)
+            {
+                log_info("User Entered text.. Entering into buffer");
+                PS4_wcstombs(out_buffer, &inputTextBuffer[0], sizeof(inputTextBuffer));
+                sceImeDialogTerm();
+                return true;
+            }
+            goto Finished;
+        }
+        else if (status == ORBIS_IME_DIALOG_STATUS_NONE) goto Finished;
+    }
+
+Finished:
+    sceImeDialogTerm();
+    return false;
+}
+//
+int check_download_counter(StoreOptions* set, char* title_id)
+{
+    char  http_req[300];
+    char* result;
+    int count;
+
+    snprintf(http_req, 300, "%s/download.php?tid=%s&check=true", set->opt[CDN_URL], title_id);
+
+    result = check_from_url(http_req, DL_COUNTER, false);
+    if (result){
+        count = atoi(result);
+        free(result);
+    }
+    else
+        count = -1;
+
+    log_debug( "%s Number_of_DL: %d", __FUNCTION__, count);
+    return count;
+}
+
+
+
+// 
+int check_store_from_url(char* cdn, enum CHECK_OPTS opt)
+{
+    char  http_req[300];
+    char *result = NULL;
+
+    switch(opt)
+    {
+        case MD5_HASH:
+        {
+            if (!if_exists(SQL_STORE_DB))
+                return 0;
+
+            snprintf(http_req, 299, "%s/api.php?db_check_hash=true", cdn);
+
+            if ((result = check_from_url(http_req, MD5_HASH, false)) != NULL && result && MD5_hash_compare(SQL_STORE_DB, result) == SAME_HASH)
+            {
+                if(result) free(result); 
+                return 1;
+            }
+            else
+            {
+                if(result) free(result); 
+                return 0;
+            }
+            break;
+        } 
+
+        case COUNT:
+        {
+            int pages = 0;
+            int count = SQL_Get_Count();
+            if (count > 0)
+            {
+                pages = (count + STORE_PAGE_SIZE - 1) / STORE_PAGE_SIZE;
+                if (pages >  STORE_MAX_LIMIT_PAGES)
+                    msgok(FATAL, getLangSTR(EXCEED_LIMITS));
+
+                log_debug("counted pages: %d", pages);
+            }
+            else
+                msgok(FATAL, getLangSTR(ZERO_ITEMS));
+          
+            return pages;
+        } 
+
+#if BETA==1 //http://api.staging.pkg-zone.com/key/beta/check?key=KEY
+     
+        case BETA_CHECK: {
+            char url[255];
+            snprintf(url, 254, "http://api.staging.pkg-zone.com/key/beta/check?key=%s", get->opt[BETA_KEY]);
+            log_info("FULL URL: %s", url); 
+            return check_from_url(url, BETA_CHECK, false); 
+            break;
+        }
+#endif
+
+        default: break;
+    }
+    return -1;   
+}
+
+
+bool rmtree(const char path[]) {
+
+    struct dirent* de;
+    char fname[300];
+    DIR* dr = opendir(path);
+    if (dr == NULL)
+    {
+        log_debug("No file or directory found: %s", path);
+        return false;
+    }
+    while ((de = readdir(dr)) != NULL)
+    {
+        int ret = -1;
+        struct stat statbuf;
+        snprintf(fname,299, "%s/%s", path, de->d_name);
+        if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, ".."))
+            continue;
+        if (!stat(fname, &statbuf))
+        {
+            if (S_ISDIR(statbuf.st_mode))
+            {
+                log_debug("removing dir: %s Err: %d", fname, ret = unlinkat(dirfd(dr), fname, AT_REMOVEDIR));
+                if (ret != 0)
+                {
+                    rmtree(fname);
+                    log_debug("Err: %d", ret = unlinkat(dirfd(dr), fname, AT_REMOVEDIR));
+                }
+            }
+            else
+            {
+                log_debug("Removing file: %s, Err: %d", fname, unlink(fname));
+            }
+        }
+    }
+    closedir(dr);
+
+    return true;
+}
+
+int malloc_stats_fast(OrbisMallocManagedSize *ManagedSize);
+
+void print_memory()
+{
+   size_t sz = 0;
+   OrbisMallocManagedSize ManagedSize;
+   SCE_LIBC_INIT_MALLOC_MANAGED_SIZE(ManagedSize);
+   malloc_stats_fast(&ManagedSize);
+   sceKernelAvailableFlexibleMemorySize(&sz);
+   double dfp_fmem = (1. - (double)sz / (double)0x8000000) * 100.;
+/*	unsigned short sz;
+	unsigned short ver;
+	unsigned int reserv;
+	size_t maxSysSz;
+	size_t curSysSz;
+	size_t maxUseSz;
+	size_t curUseSz;*/
+   log_info("[MEM] CurrentSystemSize: %s, CurrentInUseSize: %s", calculateSize(ManagedSize.curSysSz), calculateSize(ManagedSize.curUseSz));
+   log_info("[MEM] MaxSystemSize: %s, MaxInUseSize: %s", calculateSize(ManagedSize.maxSysSz), calculateSize(ManagedSize.maxUseSz));
+   log_info("[VRAM] VRAM_Available: %s, AmountUsed: %.2f%%",calculateSize(sz), dfp_fmem);
+
+}
+
+
+int progstart(char* format, ...)
+{
+
+    
+    int ret = 0;
+
+    char buff[1024];
+
+    memset(buff, 0, 1024);
+
+    va_list args;
+    va_start(args, format);
+    vsprintf(&buff[0], format, args);
+    va_end(args);
+
+    sceSysmoduleLoadModule(ORBIS_SYSMODULE_MESSAGE_DIALOG);
+    sceMsgDialogInitialize();
+
+    OrbisMsgDialogParam dialogParam;
+    OrbisMsgDialogParamInitialize(&dialogParam);
+    dialogParam.mode = 2;
+
+    OrbisMsgDialogProgressBarParam  progBarParam;
+    memset(&progBarParam, 0, sizeof(OrbisMsgDialogProgressBarParam));
+
+    dialogParam.progBarParam = &progBarParam;
+    dialogParam.progBarParam->barType = 0;
+    dialogParam.progBarParam->msg = &buff[0];
+
+    sceMsgDialogOpen(&dialogParam);
+
+    return ret;
+}
+
+bool init_curl(){
+   
+    int ress = curl_global_init(CURL_GLOBAL_SSL);
+    if(ress < 0){
+        log_info("curl_global_init failed: %s", curl_easy_strerror(ress));
+        return false;
+    }
+    else{
+        log_info("curl_version | %s", curl_version());
+        return true;
+    }
+
+    return false;
+}
+
+void CheckUpdate(const char* tid, item_t *li){
+
+    bool app_exists = false;
+    if(li->interuptable && 
+    li->update_status != UPDATE_NOT_CHECKED){
+        //log_info("interuptable %i, update_s %i", li->interuptable, li->update_status); 
+        return;
+    }
+
+    char buff[256];
+    sprintf(buff, "/user/app/%s/app.pkg", tid);
+    if(CalcAppsize(buff) > MB(500)){
+        log_info("App is bigger than 500MB, skipping check");
+        goto skip;
+    }
+    if(li->update_status != UPDATE_FOUND &&
+     li->update_status != NO_UPDATE)
+      app_inst_util_is_exists(tid, &app_exists);
+    else
+        app_exists = true;
+
+    if(!unsafe_source && app_exists)
+    {
+        update_ret ret = UPDATE_NOT_CHECKED;
+        if(li->update_status == UPDATE_NOT_CHECKED){
+            loadmsg(getLangSTR(DL_CACHE));
+            ret = sceStoreApiCheckUpdate(tid);
+            sceMsgDialogTerminate();
+        }
+        else{
+            ret = li->update_status;                
+            if (ret == UPDATE_FOUND){
+                 download_panel->item_d[0].token_d[0].off = download_panel_text[0] = (char*)getLangSTR(UPDATE_NOW);
+            }
+            else if (ret == NO_UPDATE){
+                //log_info("No Update Found for %s", li->token_d[ ID ].off);
+                download_panel->item_d[0].token_d[0].off = download_panel_text[0] = (char*)getLangSTR(REINSTALL_APP);
+            }
+           /// log_info("app_exists %i, download_panel_text[0] %s, ret %i", app_exists, download_panel_text[0], ret);
+
+        }   li->update_status = ret;
+    }
+    else{
+        skip:
+        if(!app_exists && (download_panel_text[0] == (char*)getLangSTR(REINSTALL_APP) 
+        || download_panel_text[0] == (char*)getLangSTR(UPDATE_NOW))){
+            log_info("app_exists %i, download_panel_text[0] %s", app_exists, download_panel_text[0]);
+            if(get->auto_install){
+                download_panel->item_d[0].token_d[0].off = download_panel_text[0] = (char*)getLangSTR(DL_AND_IN);
+            }
+            else{
+                download_panel->item_d[0].token_d[0].off = download_panel_text[0] = (char*)getLangSTR(DL2);
+            }
+        }
+    }
+}
+
+
+
+
 wchar_t inputTextBuffer[70];
 static char storebuffer[70];
 
@@ -813,14 +1047,14 @@ char* StoreKeyboard(const char* Title, char* initialTextBuffer)
     memset(&storebuffer[0], 0, sizeof(storebuffer));
 
     if (initialTextBuffer)
-        snprintf(&storebuffer[0], 1023, "%s", initialTextBuffer);
+        snprintf(&storebuffer[0], 69, "%s", initialTextBuffer);
     //converts the multibyte string src to a wide-character string starting at dest.
     mbstowcs(inputTextBuffer, storebuffer, strlen(storebuffer) + 1);
     // use custom title
     if (Title)
-        snprintf(&titl[0], 1023, "%s", Title);
+        snprintf(&titl[0], 69, "%s", Title);
     else // default
-        snprintf(&titl[0], 1023, "%s", "Store Keyboard");
+        snprintf(&titl[0], 69, "%s", "Store Keyboard");
     //converts the multibyte string src to a wide-character string starting at dest.
     mbstowcs(title, titl, strlen(titl) + 1);
 
@@ -864,439 +1098,4 @@ char* StoreKeyboard(const char* Title, char* initialTextBuffer)
 Finished:
     sceImeDialogTerm();
     return storebuffer;
-}
-//
-int check_download_counter(StoreOptions* set, char* title_id)
-{
-
-    char  http_req[300];
-    char* result;
-    int count;
-
-
-    snprintf(http_req, 300, "%s/download.php?tid=%s&check=true", set->opt[CDN_URL], title_id);
-
-    result = check_from_url(http_req, DL_COUNTER, false);
-
-    if (result != NULL)
-        count = atoi(result);
-    else
-        msgok(FATAL, "Dev Error 6066");
-
-    free(result);
-
-    log_debug( "%s Number_of_DL:%d", __FUNCTION__, count);
-
-    return count;
-}
-
-
-
-// 
-int check_store_from_url(char* cdn, enum CHECK_OPTS opt)
-{
-    char  http_req[300];
-    char *result = NULL;
-
-    switch(opt)
-    {
-        case MD5_HASH:
-        {
-            if (!if_exists(SQL_STORE_DB))
-                return 0;
-
-            snprintf(http_req, 299, "%s/api.php?db_check_hash=true", cdn);
-
-            if ((result = check_from_url(http_req, MD5_HASH, false)) != NULL && MD5_hash_compare(SQL_STORE_DB, result) == SAME_HASH)
-            {
-                free(result); 
-                return 1;
-            }
-            else
-            {
-                if(result != NULL)
-                   free(result); 
-                
-                return 0;
-            }
-        } break;
-
-        case COUNT:
-        {
-            int pages = 0;
-            int count = SQL_Get_Count();
-            if (count > 0)
-            {
-                pages = (count + PAGE_SIZE - 1) / PAGE_SIZE;
-                if (pages >  STORE_MAX_LIMIT_PAGES)
-                    msgok(FATAL, getLangSTR(EXCEED_LIMITS));
-
-                log_debug("counted pages: %d", pages);
-            }
-            else
-                msgok(FATAL, getLangSTR(ZERO_ITEMS));
-          
-            return pages;
-        } break;
-
-#if BETA==1 //http://api.staging.pkg-zone.com/key/beta/check?key=KEY
-     
-        case BETA_CHECK: {
-            char url[255];
-            snprintf(url, 254, "http://api.staging.pkg-zone.com/key/beta/check?key=%s", get->opt[BETA_KEY]);
-            log_info("FULL URL: %s", url); 
-            return check_from_url(url, BETA_CHECK, false); 
-            break;
-        }
-#endif
-
-        default: break;
-    }
-    return 0;   
-}
-
-
-bool rmtree(const char path[]) {
-
-    struct dirent* de;
-    char fname[300];
-    DIR* dr = opendir(path);
-    if (dr == NULL)
-    {
-        log_debug("No file or directory found: %s", path);
-        return false;
-    }
-    while ((de = readdir(dr)) != NULL)
-    {
-        int ret = -1;
-        struct stat statbuf;
-        snprintf(fname,299, "%s/%s", path, de->d_name);
-        if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, ".."))
-            continue;
-        if (!stat(fname, &statbuf))
-        {
-            if (S_ISDIR(statbuf.st_mode))
-            {
-                log_debug("removing dir: %s Err: %d", fname, ret = unlinkat(dirfd(dr), fname, AT_REMOVEDIR));
-                if (ret != 0)
-                {
-                    rmtree(fname);
-                    log_debug("Err: %d", ret = unlinkat(dirfd(dr), fname, AT_REMOVEDIR));
-                }
-            }
-            else
-            {
-                log_debug("Removing file: %s, Err: %d", fname, unlink(fname));
-            }
-        }
-    }
-    closedir(dr);
-
-    return true;
-}
-
-
-bool IS_ERROR(uint32_t a1)
-{
-    return a1 & 0x80000000;
-}
-
-//            sceSystemServiceKillApp();
-
-uint32_t Launch_App(char* TITLE_ID, bool silent) {
-
-    uint32_t sys_res = -1;
-
-    int libcmi = sceKernelLoadStartModule("/system/common/lib/libSceSystemService.sprx", 0, NULL, 0, 0, 0);
-    if (libcmi > 0)
-    {
-        log_info("Starting action Launch_Game_opt");
-
-
-        OrbisUserServiceLoginUserIdList userIdList;
-
-        log_info("ret %x", sceUserServiceGetLoginUserIdList(&userIdList));
-
-        for (int i = 0; i < 4; i++)
-        {
-            if (userIdList.userId[i] != 0xFF)
-            {
-                log_info("[%i] User ID 0x%x", i, userIdList.userId[i]);
-            }
-        }
-
-
-        LncAppParam param;
-        param.sz = sizeof(LncAppParam);
-
-        if (userIdList.userId[0] != 0xFF)
-            param.user_id = userIdList.userId[0];
-        else if (userIdList.userId[1] != 0xFF)
-            param.user_id = userIdList.userId[1];
-
-        param.app_opt = 0;
-        param.crash_report = 0;
-        param.check_flag = SkipSystemUpdateCheck;
-
-        log_info("l1 %x", sceLncUtilInitialize());
-        
-
-        sys_res = sceLncUtilLaunchApp(TITLE_ID, 0, &param);
-        if (IS_ERROR(sys_res))
-        {
-            if (!silent) {
-                log_info("Switch 0x%x", sys_res);
-                switch (sys_res) {
-                case SCE_LNC_ERROR_APP_NOT_FOUND: {
-                    if(strstr(DEBUG_SETTINGS_TID, TITLE_ID) == NULL)
-                       msgok(WARNING, getLangSTR(APP_NOT_FOUND));
-
-                    break;
-                }
-                case SCE_LNC_UTIL_ERROR_ALREADY_RUNNING: {
-                    msgok(WARNING, getLangSTR(APP_OPENED));
-                    break;
-                }
-                case SCE_LNC_UTIL_ERROR_APPHOME_EBOOTBIN_NOT_FOUND: {
-                    msgok(WARNING, getLangSTR(MISSING_EBOOT));
-                    break;
-                }
-                case SCE_LNC_UTIL_ERROR_APPHOME_PARAMSFO_NOT_FOUND: {
-                    msgok(WARNING, getLangSTR(MISSING_SFO));
-                    break;
-                }
-                case SCE_LNC_UTIL_ERROR_NO_SFOKEY_IN_APP_INFO: {
-                    msgok(WARNING, getLangSTR(CORRUPT_SFO));
-                    break;
-                }
-                case SCE_LNC_UTIL_ERROR_ALREADY_RUNNING_KILL_NEEDED: {
-                    log_debug("ALREADY RUNNING KILL NEEDED");
-                    break;
-                }
-                case SCE_LNC_UTIL_ERROR_ALREADY_RUNNING_SUSPEND_NEEDED: {
-                    log_debug("ALREADY RUNNING SUSPEND NEEDED");
-                    break;
-                }
-                case SCE_LNC_UTIL_ERROR_SETUP_FS_SANDBOX: {
-                    msgok(WARNING, getLangSTR(APP_UNL));
-                    break;
-                }
-                case SCE_LNC_UTIL_ERROR_INVALID_TITLE_ID: {
-                    msgok(WARNING, getLangSTR(ID_NOT_VAILD));
-                    break;
-                }
-
-                default: {
-                    msgok(WARNING, "%s: 0x%x", getLangSTR(LAUNCH_ERROR),sys_res);
-                    break;
-                }
-                }
-            }
-        }
-
-        log_info("launch ret 0x%x", sys_res);
-
-    }
-    else {
-        if(!silent)
-            msgok(WARNING, "%s 0x%X", getLangSTR(LAUNCH_ERROR),libcmi);
-    }
-
-    return sys_res;
-}
-
-extern struct retry_t* cf_tex;
-
-extern int total_pages;
-
-
-void build_iovec(struct iovec** iov, int* iovlen, const char* name, const void* val, size_t len) {
-    int i;
-
-    if (*iovlen < 0)
-        return;
-
-    i = *iovlen;
-    *iov = (struct iovec*)realloc((void*)(*iov), sizeof(struct iovec) * (i + 2));
-    if (*iov == NULL) {
-        *iovlen = -1;
-        return;
-    }
-
-    (*iov)[i].iov_base = strdup(name);
-    (*iov)[i].iov_len = strlen(name) + 1;
-    ++i;
-
-    (*iov)[i].iov_base = (void*)val;
-    if (len == (size_t)-1) {
-        if (val != NULL)
-            len = strlen((const char*)val) + 1;
-        else
-            len = 0;
-    }
-    (*iov)[i].iov_len = (int)len;
-
-    *iovlen = ++i;
-}
-
-
-int mountfs(const char* device, const char* mountpoint, const char* fstype, const char* mode, uint64_t flags)
-{
-    struct iovec* iov = NULL;
-    int iovlen = 0;
-    int ret;
-
-    build_iovec(&iov, &iovlen, "fstype", fstype, -1);
-    build_iovec(&iov, &iovlen, "fspath", mountpoint, -1);
-    build_iovec(&iov, &iovlen, "from", device, -1);
-    build_iovec(&iov, &iovlen, "large", "yes", -1);
-    build_iovec(&iov, &iovlen, "timezone", "static", -1);
-    build_iovec(&iov, &iovlen, "async", "", -1);
-    build_iovec(&iov, &iovlen, "ignoreacl", "", -1);
-
-    if (mode) {
-        build_iovec(&iov, &iovlen, "dirmask", mode, -1);
-        build_iovec(&iov, &iovlen, "mask", mode, -1);
-    }
-
-    log_info("##^  [I] Mounting %s \"%s\" to \"%s\" \n", fstype, device, mountpoint);
-    ret = nmount(iov, iovlen, flags);
-    if (ret < 0) {
-        log_info("##^  [E] Failed: %d (errno: %d).\n", ret, errno);
-        goto error;
-    }
-    else {
-        log_info("##^  [I] Success.\n");
-    }
-
-error:
-    return ret;
-}
-
-void print_memory()
-{
-    SceLibcMallocManagedSize ManagedSize;
-    SCE_LIBC_INIT_MALLOC_MANAGED_SIZE(ManagedSize);
-    malloc_stats_fast(&ManagedSize);
-
-   log_info("[StoreCore][MEM] CurrentSystemSize: %s, CurrentInUseSize: %s", calculateSize(ManagedSize.currentSystemSize), calculateSize(ManagedSize.currentInuseSize));
-   log_info("[StoreCore][MEM] MaxSystemSize: %s, MaxInUseSize: %s", calculateSize(ManagedSize.maxSystemSize), calculateSize(ManagedSize.maxInuseSize));
-
-}
-
-
-int progstart(char* msg)
-{
-
-    int ret = 0;
-    sceSysmoduleLoadModule(ORBIS_SYSMODULE_MESSAGE_DIALOG);
-
-    ret = sceMsgDialogTerminate();
-
-    log_info("sceMsgDialogTerminate = %i", ret);
-
-    ret = sceMsgDialogInitialize();
-
-    log_info("sceMsgDialogInitialize = %i", ret);
-
-
-    OrbisMsgDialogParam dialogParam;
-    OrbisMsgDialogParamInitialize(&dialogParam);
-    dialogParam.mode = 2;
-
-    OrbisMsgDialogProgressBarParam  progBarParam;
-    memset(&progBarParam, 0, sizeof(OrbisMsgDialogProgressBarParam));
-
-    dialogParam.progBarParam = &progBarParam;
-    dialogParam.progBarParam->barType = 0;
-    dialogParam.progBarParam->msg = msg;
-
-    sceMsgDialogOpen(&dialogParam);
-
-    return ret;
-}
-
-int item_t_order_by_alphabet(const void* a1, const void* b1)
-{
-    item_t* a = (item_t*)a1;
-    item_t* b = (item_t*)b1;
-
-    if (b->token_d[NAME].off == NULL || b->token_d[NAME].off == NULL) return 1;
-
-    //log_info("|First: %s | Second: %s |", a->token_d[NAME].off, b->token_d[NAME].off);
-
-    return strcmp(a->token_d[NAME].off, b->token_d[NAME].off);
-}
-
-static int item_t_order_by_tid(const item_t* a, const item_t* b)
-{
-    if (a->token_d[ID].off == NULL || b->token_d[ID].off == NULL) return 1;
-
-    //log_info("|First: %s | Second: %s |", a->token_d[ID].off, b->token_d[ID].off);
-
-    return strcmp(a->token_d[ID].off, b->token_d[ID].off);
-    /* strcmp functions works exactly as expected from comparison function */
-}
-
-void print_Apps_Array(item_t* b, int arrSize) {
-    for (int i = 0; i <= arrSize; i++) {
-        if (b[i].token_d[ID].off != NULL)
-            log_info("b[%i].token_d[%i].off ptr: %p", i, ID, b[i].token_d[ID].off);
-        if (b[i].token_d[NAME].off != NULL)
-             log_info("b[%i].token_d[%i].off ptr: %p", i, NAME, b[i].token_d[NAME].off);
-        if (b[i].token_d[VERSION].off != NULL)
-             log_info("b[%i].token_d[%i].off ptr: %p", i, VERSION, b[i].token_d[VERSION].off);
-    }
-}
-void delete_apps_array(item_t* b, int arrSize) {
-    //free only what we know is not NULL
-    if (b != NULL) {
-        for (int i = 0; i <= arrSize; i++) {
-            for (int j = 0; j < NUM_OF_USER_TOKENS; j++) {
-                // log_info("Index %i, index_t %i", i, j);
-                if (b[i].token_d[j].off != NULL) {
-                    log_info("b[%i].token_d[%i].off %p", i, j, b[i].token_d[j].off);
-                    free(b[i].token_d[j].off);
-                }
-            }
-        }
-        //free struct 
-        free(b);
-    }
-}
-
-void refresh_apps_for_cf(enum SORT_APPS_BY op)
-{
-    int before = all_apps[0].token_c;
-    loadmsg(getLangSTR(RELOAD_LIST));
-    log_debug("Reloading Installed Apps before: %i", before);
-    //leak not so much
-    //print_Apps_Array(all_apps, before);
-    delete_apps_array(all_apps, before);
-
-    all_apps = index_items_from_dir("/user/app", "/mnt/ext0/user/app");
-    log_info("=== %i", all_apps[0].token_c);
-
-    switch (op) {
-        case SORT_TID: {
-        qsort(all_apps + 1, all_apps[0].token_c, sizeof(item_t), &item_t_order_by_tid);
-        break;
-        }
-        case SORT_ALPHABET: {
-        qsort(all_apps + 1, all_apps[0].token_c, sizeof(item_t), &item_t_order_by_alphabet);
-        break;
-        }
-    }
-
-    log_info("=== %i", all_apps[0].token_c);
-    print_Apps_Array(all_apps, all_apps[0].token_c);
-    InitScene_5(ATTR_ORBISGL_WIDTH, ATTR_ORBISGL_HEIGHT);
-    InitScene_4(ATTR_ORBISGL_WIDTH, ATTR_ORBISGL_HEIGHT);
-    for (int i = 1; i < all_apps[0].token_c + 1; i++) {
-        check_tex_for_reload(i);
-        check_n_load_textures(i);
-    }
-
-    sceMsgDialogTerminate();
-    log_debug("Done reloading # of App: %i, # of Apps added/removed: %i", all_apps[0].token_c, all_apps[0].token_c - before);
 }

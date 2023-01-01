@@ -254,7 +254,7 @@ void sceHttpSetAcceptEncodingGZIPEnabled();
 // Empty Comment
 int sceHttpSetAuthEnabled(int id, int isEnable);
 // Empty Comment
-sceHttpSetAuthInfoCallback(int id, OrbisHttpAuthInfoCallback cbfunc, void *userArg);
+int sceHttpSetAuthInfoCallback(int id, OrbisHttpAuthInfoCallback cbfunc, void *userArg);
 // Empty Comment
 int sceHttpSetAutoRedirect(int id, int isEnable);
 // Empty Comment
@@ -346,6 +346,12 @@ void sceHttpUriUnescape();
 // Empty Comment
 int sceHttpWaitRequest(OrbisHttpEpollHandle eh, OrbisHttpNBEvent* nbev, int maxevents, int timeout);
 
+int sceNetPoolCreate(
+	const char *name,
+	int size,
+	int flags
+);
+int sceNetInit();
 
 #endif
 

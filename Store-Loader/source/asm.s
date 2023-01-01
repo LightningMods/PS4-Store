@@ -27,7 +27,7 @@ cpu_disable_wp:
   .intel_syntax noprefix
 .text
 
-.global syscall, syscall1, syscall2, syscall3, syscall4 ,Sysctl, Fork
+.global syscall_alt, syscall1, syscall2, syscall3, syscall4 ,Sysctl, Fork
 
 
 Fork:
@@ -53,7 +53,7 @@ Sysctl:
 
 
 
-syscall:
+syscall_alt:
     mov rax,0
     mov r10,rcx
     syscall

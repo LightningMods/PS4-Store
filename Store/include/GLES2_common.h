@@ -1,12 +1,15 @@
 #pragma once
-#include "defines.h"
+
+
 #include <time.h>
 /// from demo-font.c
 #include <freetype-gl.h>
+#include "net.h"
+#ifdef __ORBIS__
+#include <store_api.h>
+#endif
 // freetype-gl pass last composed Text_Length in pixel, we use to align text!
 // from json_simple.c
-
-#include "net.h"
 
 /*
     GLES2 layout rework, v2
@@ -23,6 +26,48 @@
     - the query to save search results;
 */
 
+// reuse this type to index texts around!
+/// for icons.c, sprite.c
+#define NUM_OF_TEXTURES  (8)
+#define NUM_OF_SPRITES   (6)
+/// from GLES2_rects.c
+enum SH_type
+{
+    USE_COLOR,
+    USE_UTIME,
+    CUSTOM_BADGE,
+    NUM_OF_PROGRAMS
+};
+
+typedef struct
+{
+    item_idx_t token[NUM_OF_USER_TOKENS]; // indexed tokens from json_data
+    ivec2      token_i[NUM_OF_USER_TOKENS]; // enough for indexing all tokens, in ft-gl VBO
+    int        num_of_texts;                // num of indexed tokens we print to screen
+    GLuint     texture;                     // the textured icon from PICPATH
+    vec4       frect;                       // the normalized position and size of texture icon
+    vec2       origin;  // normalized origin point
+    // 5x3
+    vec2       pen;
+    char       in_atlas;
+} page_item_t;
+
+
+// the single page holds its infos
+typedef struct
+{
+    // max NUM_OF_TEXTURES per page, max 8 items
+    int  num_of_items;
+    // each page will hold its json_data
+    char* json_data;
+    // and its ft-gl vertex buffer
+    vertex_buffer_t* vbo;
+    // all indexed tokens, per item... (zerocopy, eh)
+    page_item_t  item[NUM_OF_TEXTURES];
+    // from 1, refrect json num in filename
+    int page_num;
+} page_info_t;
+
 
 typedef struct
 {
@@ -35,7 +80,8 @@ typedef enum pt_status
     READY,
     PAUSED,
     RUNNING,
-    COMPLETED
+    COMPLETED,
+    INSTALLING_APP
 } pt_status;
 typedef enum vbo_status
 {
@@ -57,28 +103,26 @@ typedef enum badge_t
 } badge_t;
 
 #define ORBIS_LIBC_MALLOC_MANAGED_SIZE_VERSION (0x0001U)
-
+/*	unsigned short sz;
+	unsigned short ver;
+	unsigned int reserv;
+	size_t maxSysSz;
+	size_t curSysSz;
+	size_t maxUseSz;
+	size_t curUseSz;*/
 #ifndef SCE_LIBC_INIT_MALLOC_MANAGED_SIZE
 #define SCE_LIBC_INIT_MALLOC_MANAGED_SIZE(mmsize) do { \
-	mmsize.size = sizeof(mmsize); \
-	mmsize.version = ORBIS_LIBC_MALLOC_MANAGED_SIZE_VERSION; \
-	mmsize.reserved1 = 0; \
-	mmsize.maxSystemSize = 0; \
-	mmsize.currentSystemSize = 0; \
-	mmsize.maxInuseSize = 0; \
-	mmsize.currentInuseSize = 0; \
+	mmsize.sz = sizeof(mmsize); \
+	mmsize.ver = ORBIS_LIBC_MALLOC_MANAGED_SIZE_VERSION; \
+	mmsize.reserv = 0; \
+	mmsize.maxSysSz = 0; \
+	mmsize.curSysSz = 0; \
+	mmsize.maxUseSz = 0; \
+	mmsize.curUseSz = 0; \
 } while (0)
 #endif
 
-typedef struct SceLibcMallocManagedSize {
-    uint16_t size;
-    uint16_t version;
-    uint32_t reserved1;
-    size_t maxSystemSize;
-    size_t currentSystemSize;
-    size_t maxInuseSize;
-    size_t currentInuseSize;
-} SceLibcMallocManagedSize;
+#define GL_NULL 0
 
 
 #define ARRAYSIZE(a) ((sizeof(a) / sizeof(*(a))) / ((size_t)(!(sizeof(a) % sizeof(*(a))))))
@@ -94,16 +138,26 @@ struct CVec
     void* ptr;
 
 };
-
+#define UPDATE_NOT_CHECKED -1
+#ifndef __ORBIS__
+typedef enum{
+    UPDATE_FOUND,
+    UPDATE_ERROR,
+    NO_UPDATE,
+} update_ret;
+#endif
 typedef struct
 {
     item_idx_t* token_d;  // data
+    update_ret  update_status; // update status
     int         token_c; // count
-    bool        is_ext_hdd;
+    bool        failed_dl;
+    bool        png_is_loaded; // whether the image is loaded
     GLuint      texture;  // the item icon
     // if the item icon is cached in atlas, use UV
     vec4             uv;  // normalized p1, p2
     enum badge_t  badge;  // 
+    bool interuptable; // whether the item is interuptable
 
     // need to add index for texture atlas
 } item_t;
@@ -145,8 +199,12 @@ enum views
     ON_ITEM_INFO   // download_panel
 };
 
+
 // menu entry strings
 #define  LPANEL_Y  (5)
+
+#if defined(__ORBIS__)
+
 #define UP   (111)
 #define DOW  (116)
 #define LEF  (113)
@@ -158,6 +216,22 @@ enum views
 #define OPT  ( 32)
 #define L1   ( 10)
 #define R1   ( 11)
+#define L2   (222)
+#else
+
+#define UP   (98)
+#define DOW  (104)
+#define LEF  (100)
+#define RIG  (102)
+#define CRO  ( 53)
+#define CIR  ( 54)
+#define TRI  ( 28)
+#define SQU  ( 39)
+#define OPT  ( 32)
+#define L1   ( 10)
+#define R1   ( 11)
+#define L2   ( 12)
+#endif
 
 extern item_idx_t* aux, * q; // aux and Search Query
 
@@ -166,13 +240,11 @@ extern GLuint fallback_t;
     array for Special cases
 */
 extern item_t* games,
-* groups,
-* all_apps; // Installed_Apps
+* groups;
 
 
 // for Settings (options_panel)
-extern bool use_reflection,
-use_pixelshader;
+extern bool use_reflection;
 
 // texts
 extern char* gm_p_text[5]; // 5
@@ -180,7 +252,6 @@ extern char* new_panel_text[5][11];
 // posix threads args, for downloading
 extern dl_arg_t* pt_info;
 
-char* get_json_token_value(item_idx_t* item, int name);
 void refresh_atlas(void);
 
 // from GLES2_rects.c
@@ -191,15 +262,7 @@ void on_GLES2_Init_icons(int view_w, int view_h);
 void on_GLES2_Update(double time);
 //void on_GLES2_Render_icons(int num);
 void on_GLES2_Render_icon(enum SH_type SL_program, GLuint texture, int num, vec4* frect, vec4* opt_uv);
-
-void on_GLES2_Render_box(vec4* frect);
 void on_GLES2_Final(void);
-
-// from pixelshader.c
-void pixelshader_render(GLuint SL_program, vertex_buffer_t* vbo, vec2* resolution);
-void pixelshader_init(int width, int height);
-void pixelshader_fini(void);
-
 void ORBIS_RenderSubMenu(int num);
 
 // GLES2_font.c
@@ -208,17 +271,8 @@ void GLES2_init_submenu(void);
 void GLES2_render_submenu_text(int num);
 void ftgl_render_vbo(vertex_buffer_t* vbo, vec3* offset);
 
-// todo: sort out those proto
-uint32_t sceKernelGetCpuTemperature(uint32_t* res);
-int sceKernelAvailableFlexibleMemorySize(size_t* free_mem);
-
-int notify(char* message);
-void escalate_priv(void);
 int initGL_for_the_store(bool reload_apps, int ref_pages);
-int pingtest(int libnetMemId, int libhttpCtxId, const char* src);
 
-
-item_idx_t* analyze_item_t(item_t* items, int item_count);
 item_t* analyze_item_t_v2(item_t* items, int item_count);
 item_idx_t* search_item_t(item_t* items, int item_count, enum token_name TN, char* pattern);
 item_t* index_items_from_dir(const char* dirpath, const char* dirpath2);
@@ -241,18 +295,18 @@ layout_t* GLES2_layout_init(int req_item_count);
 vertex_buffer_t* vbo_from_rect(vec4* rect);
 
 void GLES2_UpdateVboForLayout(layout_t* l);
-
-int layout_fill_item_from_list(layout_t* l, const char** i_list);
-
-void fw_action_to_cf(int button);
-
-void GLES2_render_menu(int unused);
-
+int layout_fill_item_from_list(layout_t* l, char** i_list);
 // from GLES2_scene.c
 void GLES2_scene_init(int w, int h);
-void GLES2_scene_render(void);
+void GLES2_scene_render(const char* query);
 void GLES2_scene_on_pressed_button(int button);
-//void X_action_dispatch(int action, layout_t *l);
+void X_action_dispatch(int action, layout_t *l);
+void layout_refresh_VBOs(void);
+void GLES2_Draw_common_texts(void);
+void GLES2_render_download_panel(void);
+void O_action_dispatch(void);
+void pixelshader_init(int width, int height);
+void pixelshader_render(GLuint program_i, vertex_buffer_t* vbo, vec2* req_size);
 
 /// pthreads used in GLES2_q.c
 
@@ -281,7 +335,6 @@ dfp_ext,
 dfp_now;
 
 extern layout_t* active_p,     // the active panel moves selector around
-* ls_p,     // example list panel
 * icon_panel,
 * left_panel,
 * left_panel2,
@@ -289,12 +342,12 @@ extern layout_t* active_p,     // the active panel moves selector around
 * download_panel,
 * queue_panel;
 
+// single item infos, for the page_info_t below
 // GLES2_layout
 void layout_update_fsize(layout_t* l);
 void layout_update_sele(layout_t* l, int movement);
 void GLES2_Refresh_for_settings();
 void layout_set_active(layout_t* l);
-void swap_panels(void);
 void GLES2_render_layout_v2(layout_t* l, int unused);
 
 void GLES2_render_list(int unused);
@@ -312,13 +365,6 @@ void recreate_item_t(item_t** items);
 
 /// from shader-common.c
 GLuint BuildProgram(const char* vShader, const char* fShader, int vs_size, int fs_size);
-static GLuint compile(GLenum type, const char* source, int size);
-
-
-// from cmd_build.c
-char** build_cmd(char* cmd_line);
-
-
 extern float tl;
 
 int  es2init_text(int width, int height);
@@ -350,30 +396,24 @@ typedef struct {
     const void* data;
 } RawImageData;
 
-RawImageData get_raw_image_data_from_png(const void* png_data, const int png_data_size);
+typedef enum {
+    TEXTURE_LOAD_DEFAULT,
+    TEXTURE_DOWNLOAD,
+    TEXTURE_LOAD_PNG,
+} texture_load_status_t;
+
+RawImageData get_raw_image_data_from_png(const void* png_data, const int png_data_size, const char* fp);
 void         release_raw_image_data(const RawImageData* data);
+bool is_png_vaild(const char *relative_path);
 GLuint load_texture(const GLsizei width, const GLsizei height,
     const GLenum  type, const GLvoid* pixels);
 // higher level helper
-GLuint load_png_asset_into_texture(const char* relative_path);
 GLuint load_png_data_into_texture(const char* data, int size);
+bool check_n_load_texture(const int idx, texture_load_status_t status);
 extern vec2 tex_size; // last loaded png size as (w, h)
 int writeImage(char* filename, int width, int height, int* buffer, char* title);
-
-
-/// from sprite.c
-void on_GLES2_Init_sprite(int view_w, int view_h);
-void on_GLES2_Size_sprite(int view_w, int view_h);
-void on_GLES2_Render_sprite(int num);
-void on_GLES2_Update_sprite(int frame);
-void on_GLES2_Final_sprite(void);
-
-
-/// from pl_mpeg.c
-int  es2init_pl_mpeg(int window_width, int window_height);
-void es2render_pl_mpeg(float dt);
-void es2end_pl_mpeg(void);
-
+GLuint load_png_asset_into_texture(const char* relative_path);
+void Install_View(layout_t* l, const char* query_string, enum token_name nm);
 
 /// from timing.c
 unsigned int get_time_ms(void);
@@ -392,25 +432,12 @@ void   user_close(void);
 void   user_end(void);
 #endif
 
-// rects tests tetris primlib
-void filledRect(int x1, int y1, int x2, int y2, unsigned char r, unsigned char g, unsigned char b);
-
 /// from ls_dir()
 bool if_exists(const char* path);
 int check_stat(const char* filepath);
 
-entry_t* get_item_entries(const char* dirpath, int* count);
-void free_item_entries(entry_t* e, int num);
-
 // from my_rects.c
 vec2 px_pos_to_normalized(vec2* pos);
-
-
-// from lines_and_rects
-void es2rndr_lines_and_rect(void);
-void es2init_lines_and_rect(int width, int height);
-void es2fini_lines_and_rect(void);
-
 
 /* from icons.c
 void on_GLES2_Init_icons(int view_w, int view_h);
@@ -429,8 +456,16 @@ void ORBIS_RenderDrawBox(enum SH_type SL_program, const vec4* rgba, const vec4* 
 void GLES2_DrawFillingRect(vec4* frect, vec4* color, double* percentage);
 
 // from GLES2_ani.c
-void GLES2_ani_init(int width, int height);
-void GLES2_ani_update(double time);
-void GLES2_ani_fini(void);
-void GLES2_ani_draw(void);
-void ani_notify(const char* message);
+// UI panels new way, v3
+vec4 get_rect_from_index(const int idx, const layout_t* l, vec4* io);
+void buffer_to_off(item_t* ret, int index_t, char* str);
+
+
+/// from GLES2_badges
+int  scan_for_badges(layout_t* l, item_t* apps);
+void GLES2_Init_badge(void);
+void GLES2_Render_badge(int idx, vec4* rect);
+
+void GLES2_render_queue(layout_t* l, int used);
+void glDeleteTextures1(int unused, GLuint* text);
+void GLES2_refresh_common(void);

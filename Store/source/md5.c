@@ -94,7 +94,7 @@
 #endif
  
 
- void* unused;
+ static void* unused;
 
 /*
  * This processes one or more 64-byte data blocks, but does NOT update the bit

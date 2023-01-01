@@ -37,36 +37,18 @@
  */
 #include <stdio.h>
 #include <string.h>
-
 #include <freetype-gl.h>  // links against libfreetype-gl
-#include <user_mem.h> 
+#include "defines.h"
+#include "utils.h"
 
 #if defined (__ORBIS__)
 
-#include <ps4sdk.h>
-#include <utils.h>
-#include <debugnet.h>
-#define  fprintf  debugNetPrintf
-#define  ERROR    DEBUGNET_ERROR
-#define  DEBUG    DEBUGNET_DEBUG
-#define  INFO     DEBUGNET_INFO
-
+#include "shaders.h"
 
 #else // on pc
-
-#include <stdio.h>
-#define  debugNetPrintf  fprintf
-#define  ERROR           stderr
-#define  DEBUG           stdout
-#define  INFO            stdout
-#define  msgok           printf
-#define  FATAL           "FATAL"
-
+#include "pc_shaders.h"
 #endif
 
-
-#include "defines.h"
-#include "shaders.h"
 
 // ------------------------------------------------------- typedef & struct ---
 typedef struct {
@@ -167,7 +149,8 @@ void render_text( void )
 void add_text( vertex_buffer_t * buffer, texture_font_t * font,
                const char * text, vec4 * color, vec2 * pen )
 {
-    if(!buffer) { log_error(buffer); return; }
+    if(!buffer)
+       return; 
 
     size_t i;
     float r = color->r, g = color->g, b = color->b, a = color->a;

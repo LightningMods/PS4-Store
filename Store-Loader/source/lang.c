@@ -1,5 +1,9 @@
 
 #include "lang.h"
+#include "Header.h"
+#include "ini.h"
+
+int32_t sceSystemServiceParamGetInt(int32_t paramId, int32_t *value);
 
 LangStrings* stropts;
 bool lang_is_initialized = false;
@@ -65,7 +69,6 @@ static int load_lang_ini(void* user, const char* section, const char* name,
     else if (MATCH("LOADER", "OPT_UPDATE")) {
         snprintf(set->strings[OPT_UPDATE], 255, "%s", value);
     }
-
     else if (MATCH("LOADER", "LOADER_FATAL")) {
         snprintf(set->strings[LOADER_FATAL], 255, "%s", value);
     }

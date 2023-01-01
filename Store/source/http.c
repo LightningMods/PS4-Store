@@ -1,37 +1,23 @@
 #include <stdarg.h>
 #include <stdlib.h> // calloc
 #include <stdatomic.h>
-#include <jsmn.h>
 #include "defines.h"
-#define ORBIS_TRUE 1
+#include "net.h"
+#include "GLES2_common.h"
+#include "utils.h"
+#include "jsmn.h"
+#include <curl/curl.h>
+#include <errno.h>
 
-struct dl_args {
-    const char *src,
-               *dst;
-    int req,
-        idx,    // thread index!
-        connid,
-        tmpid,
-        status, // thread status
-        g_idx;  // global item index in icon panel
-    double      progress;
-    uint64_t    contentLength; 
-    void *unused; // for cross compat with _v2
-    bool is_threaded;
-} dl_args;
+#define ORBIS_TRUE 1
 
 atomic_ulong g_progress = 0;
 
-int libnetMemId  = 0xFF,
-    libsslCtxId  = 0xFF,
-    libhttpCtxId = 0xFF,
-    statusCode   = 0xFF;
+int libnetMemId = 0xFF,
+libsslCtxId = 0xFF,
+libhttpCtxId = 0xFF;
 
-int  contentLengthType;
-uint64_t contentLength;
-
-
-int jsoneq(const char* json, jsmntok_t* tok, const char* s) {
+static int jsoneq(const char* json, jsmntok_t* tok, const char* s) {
     if (tok->type == JSMN_STRING && (int)strlen(s) == tok->end - tok->start &&
         strncmp(json + tok->start, s, tok->end - tok->start) == 0) {
         return 0;
@@ -40,304 +26,358 @@ int jsoneq(const char* json, jsmntok_t* tok, const char* s) {
 }
 
 
-
-void DL_ERROR(const char* name, int statusCode, struct dl_args *i)
+void DL_ERROR(const char* name, int statusCode, dl_arg_t *i)
 {
     if (!i->is_threaded) 
-        log_warn( "[StoreCore][HTTP] Download Failed with code HEX: %x Int: %i from Function %s src: %s", statusCode, statusCode, name, i->src);
+        log_warn( "[StoreCore][HTTP] Download Failed with code HEX: %x Int: %i from Function %s url: %s", statusCode, statusCode, name, i->url);
     else 
-        msgok(WARNING, "%s\n\nHEX: %x Int: %i\nfrom Function %s src: %s", getLangSTR(DL_FAILED_W),statusCode, statusCode, name, i->src);
-       
+        msgok(WARNING, "%s\n\nHEX: %x Int: %i\nfrom Function %s url: %s", getLangSTR(DL_FAILED_W),statusCode, statusCode, name, i->url);
+}
+
+int ini_dl_req(dl_arg_t *i)
+{
+    log_info( "i->url %s", i->url);
+    //i->status = 500;
+
+    char ua[100];
+    sprintf(&ua[0], USER_AGENT"-0x%x", SysctlByName_get_sdk_version());
+    log_debug("[StoreCore][HTTP] User Agent set to %s", &ua[0]);
+
+    CURL* curl;
+    CURLcode res;
+    long http_code = 0;
+    curl = curl_easy_init();
+    if (curl)
+    {
+       FILE* devfile = fopen("/dev/null", "w");
+       curl_easy_setopt(curl, CURLOPT_URL, i->url);
+       curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+       curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+       curl_easy_setopt(curl, CURLOPT_USERAGENT, &ua[0]);
+       curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+       // Fail the request if the HTTP code returned is equal to or larger than 400
+       curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+       curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
+       curl_easy_setopt(curl, CURLOPT_NOBODY, 1l);
+       curl_easy_setopt(curl, CURLOPT_HEADER, 1L); 
+       if(devfile)
+          curl_easy_setopt(curl, CURLOPT_WRITEDATA, devfile); // write to /dev/null
+
+       res = curl_easy_perform(curl);
+       if(!res) {
+         /* check the size */
+         curl_off_t cl;
+         res = curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &cl);
+         if(!res) {
+            log_info("Download size: %lu", cl);
+            i->contentLength = cl;
+         }
+         fclose(devfile);
+       }
+       else{
+        log_warn( "[StoreCore][HTTP] curl_easy_perform() failed with code %i from Function %s url: %s : error: %s", res, "ini_dl_req", i->url, curl_easy_strerror(res));
+        fclose(devfile);
+        curl_easy_cleanup(curl);
+        return 404;
+       }
     
+       curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+       curl_easy_cleanup(curl);
+    }
+    else{
+        log_warn( "[StoreCore][HTTP] curl_easy_perform() failed Function %s url: %s", "ini_dl_req", i->url);
+        curl_easy_cleanup(curl);
+        return 500;
+    }
+    if(i->status < 1) i->status = 0x1337;
+
+    return http_code;
 }
 
-void cleanup_net(int req, int connid, int tmpid)
+int my_progress_func(void *bar,
+                     double t, /* dltotal */ 
+                     double d, /* dlnow */ 
+                     double ultotal,
+                     double ulnow)
 {
-    int ret;
-    if (req > 0) {
-        ret = sceHttpDeleteRequest(req);
-        if (ret < 0) {
-            log_error("[Download] sceHttpDeleteRequest(%i) error: 0x%08X\n", req, ret);
-        }
+    dl_arg_t *perc = (dl_arg_t*)bar;
+
+    switch (perc->status)
+    {
+    case CANCELED:
+          //perc->status = READY;
+          return CURL_READFUNC_ABORT;
+        break;
+    case PAUSED:
+        curl_easy_pause(perc->curl_handle, CURLPAUSE_ALL);
+        break;
+    case RUNNING:
+        curl_easy_pause(perc->curl_handle, CURLPAUSE_CONT);
+        break;
+    default:
+        break;
     }
-    if (connid > 0) {
-        ret = sceHttpDeleteConnection(connid);
-        if (ret < 0) {
-            log_error("[Download] sceHttpDeleteConnection(%i) error: 0x%08X\n", connid, ret);
-        }
+
+    if (t > 0 && perc->status == RUNNING) {
+        // get current file pos for resuming
+        // cURL dltotal gets reset when you resume so we do this
+        perc->last_off = ftell(perc->dlfd);
+        perc->progress = (double)(((float)perc->last_off / perc->contentLength) * 100.f);
+        if (t > 0 && d > 0 && (int)d % MB(5) == 0)
+            log_debug("[HTTP][cURL] thread reading data: %.2f / %.2f (%.2f%%) off: %ld" , d, t, perc->progress, perc->last_off);
+
     }
-    if (tmpid > 0) {
-        ret = sceHttpDeleteTemplate(tmpid);
-        if (ret < 0) {
-            log_error("[Download] sceHttpDeleteTemplate(%i) error: 0x%08X\n", tmpid, ret);
-        }
-    }
+  return 0;
 }
 
-int ini_dl_req(struct dl_args *i)
-{
-    log_info( "i->src %s", i->src);
-    char USER_AGENT[100];
-    sprintf(USER_AGENT, TEST_USER_AGENT"-0x%x", SysctlByName_get_sdk_version());
-    log_debug("[StoreCore][HTTP] User Agent set to %s", USER_AGENT);
-    statusCode = sceHttpCreateTemplate(libhttpCtxId, USER_AGENT, ORBIS_HTTP_VERSION_1_1, 1);
-    if (statusCode < 0) {
-        DL_ERROR("sceHttpCreateTemplate()", i->tmpid, i);
-        goto error;
-    }
-    i->tmpid = statusCode;
-
-    statusCode = sceHttpCreateConnectionWithURL(i->tmpid, i->src, ORBIS_TRUE);
-    if (statusCode < 0)
-    {
-        DL_ERROR("sceHttpCreateConnectionWithURL()", statusCode, i);
-        goto error;
-    }
-    i->connid = statusCode;
-    // ret = sceHttpSendRequest(req, NULL, 0);
-    statusCode = sceHttpCreateRequestWithURL(i->connid, 0, i->src, 0);
-    if (statusCode < 0)
-    {
-        DL_ERROR("sceHttpCreateRequestWithURL()", statusCode, i);
-        goto error;
-    }
-    i->req = statusCode;
-
-    log_info("[StoreCore][HTTP] RecvTimeout: %x", sceHttpSetRecvTimeOut(i->tmpid, 1999999999));
-    log_info("[StoreCore][HTTP] Timeout: %x", sceHttpSetSendTimeOut(i->tmpid, 1999999999));
-
-    statusCode = sceHttpSendRequest(i->req, NULL, 0);
-    if (statusCode < 0) {
-        DL_ERROR("sceHttpSendRequest()", statusCode, i);
-        goto error;
-    }
-
-    int ret = sceHttpGetStatusCode(i->req, &statusCode);
-    if (ret < 0 || statusCode != 200){
-        DL_ERROR("sceHttpGetStatusCode()", statusCode, i);
-        goto error; //fail silently (its for JSON Func)
-        
-    }
-
-    log_info( "[%s:%i] ----- statusCode: %i ---", __FUNCTION__, __LINE__, statusCode);
-
-
-    ret = sceHttpGetResponseContentLength(i->req, &contentLengthType, &contentLength);
-    if (ret < 0)
-    {
-        log_error( "[%s:%i] ----- sceHttpGetContentLength() error: %i ---", __FUNCTION__, __LINE__, ret);
-        goto error;
-    }
-    else
-    {
-        if (contentLengthType == ORBIS_HTTP_CONTENTLEN_EXIST)
-        {
-            i->contentLength = contentLength;
-            log_info("[%s:%i] ----- Content-Length = %lu ---", __FUNCTION__, __LINE__, contentLength);
-        }
-        else { // for some reason COUNT and MD5 have no LENs but the app still loads the content fine???
-            i->contentLength = KB(600);
-            log_warn("Code 200 Success.. however no content len was reported by the server by default this app only downloads 600kbs ");
-        }
-
-        return statusCode;
-    }
-
-error:
-    log_error( "%s error: %d, 0x%x", __FUNCTION__, statusCode, statusCode);
-    cleanup_net(i->req, i->connid, i->tmpid);
-
-    // failsafe
-    if(statusCode < 1) statusCode = 0x1337;
-
-    return statusCode;
+size_t write_data(void *ptr, size_t size, size_t nmemb, FILE *stream) {
+    //log_info("size: %i nmemb: %i ptr: %p stream: %p", size, nmemb, ptr, stream);
+    size_t written = fwrite(ptr, size, nmemb, stream);
+    
+    return written;
 }
-
 //int download_file(int libnetMemId, int libhttpCtxId, const char* src, const char* dst)
-void *start_routine(void *argument)
+int start_routine(void *argument)
 {
-    struct dl_args *i = (struct dl_args*) argument;
-
-    int ret = -1;
-    int total_read = 0;
-    log_error( "[Download] i->dst %s", i->dst);
-    log_error( "[Download] i->url %s", i->src);
-    log_error( "[Download] i->req %x", i->req);
-
-    unsigned char buf[10000] = { 0 };
+     dl_arg_t *i = (dl_arg_t*) argument;
+    
+    log_info( "[Download] i->dst %s", i->dst);
+    log_info( "[Download] i->url %s", i->url);
+    char ua[100];
+    char str[21];
+    sprintf(&ua[0], USER_AGENT"-0x%x", SysctlByName_get_sdk_version());
 
     unlink(i->dst);
-
-    int fd = sceKernelOpen(i->dst, O_WRONLY | O_CREAT, 0777);
-    log_debug("[Download] fd %i", fd);
-    if(fd < 0) 
-        goto cleanup;
-
-    while (1)
+    CURLcode res;
+    CURL* curl = NULL;
+    curl = curl_easy_init();
+    if (curl)
     {
-        int read = sceHttpReadData(i->req, buf, sizeof(buf));
-        if (read < 0) { ret = (void*)read; log_error("[Download] read < 0"); goto cleanup; }
-        if (read == 0) { log_error("[Download] read == 0");  goto cleanup; }
-
-        ret = sceKernelWrite(fd, buf, read);
-        if (ret < 0 || ret != read) {
-            log_error("[Download] ret < 0 || ret != read");
-            goto cleanup;
+        i->curl_handle = curl;
+        i->dlfd = fopen(i->dst, "wb");
+        if(!i->dlfd) {
+           log_error("error opening file, ERROR: %s", strerror(errno));
+           return errno;
         }
-        
-        total_read += read;
+        curl_easy_setopt(curl, CURLOPT_URL, i->url);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, &ua[0]);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
+        curl_easy_setopt(curl, CURLOPT_PROGRESSDATA, i);
+        // Fail the request if the HTTP code returned is equal to or larger than 400
+        curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, i->dlfd);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);      /* we want progress ... */
+		curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, my_progress_func);   /* to go here so we can detect a ^C within postgres */
+        // Perform a file transfer synchronously.
+        res = curl_easy_perform(curl);
+        if(res == CURLE_PARTIAL_FILE) {
+Resume_loopback:
+           curl_easy_cleanup(curl);
+           log_info("CURLE_PARTIAL_FILE: Resuming @ %s / %s", calculateSize(i->last_off), calculateSize(i->contentLength));
+           i->last_off = ftell(i->dlfd);
 
-        int prog = (uint32_t)(((float)total_read / i->contentLength) * 100.f);
+           curl = curl_easy_init();
+           if(curl) {
+              i->curl_handle = curl;
+              log_info("CURLE_PARTIAL_FILE: Initializing curl handle %x", i->curl_handle);
 
-        if(total_read >= i->contentLength || prog >=  100)  {   //          reset
-            prog = 100; break;//runn = 0; // stop
+              curl_easy_setopt(curl, CURLOPT_URL, i->url);
+              curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+              curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+              // Fail the request if the HTTP code returned is equal to or larger than 400
+              curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+              curl_easy_setopt(curl, CURLOPT_USERAGENT, &ua[0]);
+              curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
+              curl_easy_setopt(curl, CURLOPT_PROGRESSDATA, i);
+              curl_easy_setopt(curl, CURLOPT_WRITEDATA, i->dlfd);
+              curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);      /* we want progress ... */
+		      curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, my_progress_func);   /* to go here so we can detect a ^C within postgres */
+               /*
+                * Use RANGE method for resuming. We used to use RESUME_FROM_LARGE for this but some http servers
+                * require us to always send the range request header. If we don't the server may provide different
+                * content causing seeking to fail. Note that internally Curl will automatically handle this for FTP
+                * so we don't need to worry about that here.
+               */
+              sprintf(str, "%ld-%ld", i->last_off, i->contentLength);
+              log_debug("CURLE_PARTIAL_FILE: Range %s", str);
+              curl_easy_setopt(curl, CURLOPT_RANGE, str);
+              /* Perform the request, ERROR HANDLING BELOW */
+              //i->contentLength = i->contentLength - i->last_off;
+              res = curl_easy_perform(curl);
+              if(res == CURLE_PARTIAL_FILE) goto Resume_loopback;
+           }
+           else
+             log_info("curl_easy_perform() failed: %d", curl);
+
+        }
+        if(res != CURLE_OK) {
+            log_error( "[Download] curl_easy_perform() failed: %s", curl_easy_strerror(res));
+            DL_ERROR("curl_easy_perform", res, i);
+            curl_easy_cleanup(curl);
+            if(i->dlfd)
+               fclose(i->dlfd), i->dlfd = NULL;
+            return res;
+        }
+        if(res == CURLE_OK){
+          long http_code = 0;
+          curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+          if((int)http_code < 200 || (int)http_code > 299) {
+             log_error( "[Download] HTTP error code: %d", http_code);
+             DL_ERROR("HTTP error code", http_code, i);
+             curl_easy_cleanup(curl);
+             if(i->dlfd)
+                fclose(i->dlfd), i->dlfd = NULL;
+             return http_code;
+          }
         }
     }
 
-cleanup:
-    cleanup_net(i->req, i->connid, i->tmpid);
-    if (fd > 0) {
-        ret = sceKernelClose(fd);
-        if (ret < 0) {
-            log_error("[Download] sceKernelClose(%i) error: 0x%08X\n", fd, ret);
-        }
-    }
+   if(i->dlfd)
+       fclose(i->dlfd), i->dlfd = NULL;
+       
+   if(!i->is_threaded){
+      free((void*)i->dst), i->dst = NULL;
+      free((void*)i->url), i->url = NULL;
+      free((void*)i), i = NULL;
+   }
+    if(curl)
+       curl_easy_cleanup(curl);
+
+    curl_off_t val;
+    res = curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME_T, &val);
+    if((CURLE_OK == res) && (val>0))
+      log_info("Total download time: %lu.%06lu sec.\n", (unsigned long)(val / 1000000), (unsigned long)(val % 1000000));
 
     // leave httpCtx, sslCtx, NetMemId valids to be reused !
-    return (void*)ret;
+    return 0;
 }
 
-#if defined (__ORBIS__)
-int netInit(void)
-{
-
-    int libnetMemId;
-    int ret;
-    /* libnet */
-    ret = sceNetInit();
-    ret = sceNetPoolCreate("simple", NET_HEAP_SIZE, 0);
-    libnetMemId = ret;
-
-    return libnetMemId;
-}
-#endif
 
 #include <pthread.h>
 
-
-void Network_Init()
-{
-#if defined (__ORBIS__)
-    int ret = netInit();
-    if (ret < 0) { log_info( "[StoreCore][NET_OPS] netInit() error: 0x%08X", ret); }
-    libnetMemId = ret;
-
-    ret = sceHttpInit(libnetMemId, libsslCtxId, HTTP_HEAP_SIZE);
-    if (ret < 0) { log_info( "[StoreCore][NET_OPS] sceHttpInit() error: 0x%08X", ret); }
-    libhttpCtxId = ret;
-#endif
-}
-
 // the _v2 version is used in download panel
-int dl_from_url(const char *url_, const char *dst_, bool is_threaded)
+int dl_from_url(const char *url_, const char *dst_, dl_arg_t* arg, bool is_threaded)
 {
-    // avoid Pool error
-    if(libhttpCtxId == 0xFF || libnetMemId == 0xFF) Network_Init();
-
-    dl_args.src = url_;
-    dl_args.dst = dst_;
-    dl_args.req = -1;
-    dl_args.is_threaded = is_threaded;
-
-    int ret = ini_dl_req(&dl_args);
-    if(ret == 200)
-    {   // passed
-        if(is_threaded)
-        {
-            pthread_t thread = 0;
-            ret = pthread_create(&thread, NULL, start_routine, &dl_args);
-            log_debug( "[StoreCore][NET_OPS] pthread_create for %s, ret:%d", url_, ret);
-        }
-        else
-        {
-            start_routine(&dl_args);
-            // flag done
-            ret = 0;
-        }
+    dl_arg_t* args = arg;
+    if(args == NULL){
+       args = (dl_arg_t*)malloc(sizeof(dl_arg_t));
+       args->url = strdup(url_);
+       args->dst = strdup(dst_);
+       args->req = -1;
+       args->status = 0;
+       args->is_threaded = is_threaded;
     }
-    else // on error (404, or something different)
-    {
-        log_error( "[StoreCore][NET_OPS] %s, ret:%d", __FUNCTION__, ret);
-    }
+    else
+      args->is_threaded = is_threaded;
 
-    return ret;
+    args->dlfd = NULL;
+    return start_routine((void*)args);
 }
 
-#include "jsmn.h"
 
 int jsoneq(const char *json, jsmntok_t *tok, const char *s);
+
+#define BUFFER_SIZE (0x10000) /* 256kB */
+
+struct write_result {
+char *data;
+int pos;
+};
+
+static size_t curl_write( void *ptr, size_t size, size_t nmemb, void *stream) {
+
+struct write_result *result = (struct write_result *)stream;
+
+/* Will we overflow on this write? */
+if(result->pos + size * nmemb >= BUFFER_SIZE - 1) {
+   log_error("curl error: too small buffer\n");
+   return 0;
+}
+
+/* Copy curl's stream buffer into our own buffer */
+memcpy(result->data + result->pos, ptr, size * nmemb);
+
+/* Advance the position */
+result->pos += size * nmemb;
+
+return size * nmemb;
+
+}
+
 
 
 char *check_from_url(const char *url_, enum CHECK_OPTS opt, bool silent)
 {
     char  RES_STR[255];
-    char  JSON[255];
-    int total_read = 0, lprog = 0;
+    char  JSON[BUFFER_SIZE];
+    char  ua[100];
+    jsmn_parser p;
+    jsmntok_t t[128]; /* We expect no more than 128 tokens */
+    CURL* curl;
+    CURLcode res;
+    long http_code = 0;
     
     memset(JSON, 0, sizeof(JSON));
 
-    //avoid Pool error
-    if(libhttpCtxId == 0xFF || libnetMemId == 0xFF) Network_Init();
 
-    dl_args.src = url_;
-    dl_args.req = -1;
+    sprintf(&ua[0], USER_AGENT"-0x%x", SysctlByName_get_sdk_version());
+    curl = curl_easy_init();
+    if (curl)
+    {
+        
+       struct write_result write_result = {
+        .data = &JSON[0],
+        .pos = 0
+       };
+       curl_easy_setopt(curl, CURLOPT_URL, url_);
+       curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+       curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+       curl_easy_setopt(curl, CURLOPT_USERAGENT, &ua[0]);
+       curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+       curl_easy_setopt(curl, CURLOPT_NOPROGRESS,   1l);
+       curl_easy_setopt(curl, CURLOPT_NOBODY, 0l);
+       curl_easy_setopt(curl, CURLOPT_HEADER, 0L); 
+       curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write);
+       curl_easy_setopt(curl, CURLOPT_WRITEDATA, &write_result);
 
-    int r = ini_dl_req(&dl_args);
-    log_info( "status = %i", r);
+       res = curl_easy_perform(curl);
+       if(!res) {
+          log_info("RESPONSE: %s", JSON);
+       }
+       else{
+        log_warn( "[StoreCore][HTTP] curl_easy_perform() failed with code %i from Function %s url: %s : error: %s", res, "ini_dl_req", url_, curl_easy_strerror(res));
+        curl_easy_cleanup(curl);
+        if (!silent) msgok(FATAL, getLangSTR(SERVER_DIS));
+       }
+    
+       curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+       if(http_code != 200){
+          curl_easy_cleanup(curl);
+          if (!silent) msgok(FATAL, getLangSTR(SERVER_DIS));
+       }
+       curl_easy_cleanup(curl);
+    }
+    else{
+        log_warn( "[StoreCore][HTTP] curl_easy_perform() failed Function %s url: %s", "ini_dl_req", url_);
+        curl_easy_cleanup(curl);
+        if (!silent) msgok(FATAL, getLangSTR(SERVER_DIS));
+    }
 
 #if BETA==1
     if (opt == BETA_CHECK)
         return r;
 #endif
-    if(r  == 200)
-    {  
-        while (1)
-        {   
-            uint64_t read = sceHttpReadData(dl_args.req, JSON, sizeof(JSON));
-            if (read < 0) return NULL;
-            if (read == 0) break;
-
-            total_read += read;
-
-            int prog  = (double)(((float)total_read / dl_args.contentLength) * 100.f);
-
-            if (prog != lprog) {      // speeds it up,  the printfs are fucking slow 
-                log_info( "[StoreCore][HTTP] reading data: %lub / %lub (%u%%)", total_read, dl_args.contentLength, prog);
-                g_progress = prog;
-            }
-            lprog = prog;
-
-            if(total_read >= dl_args.contentLength || prog >=  100)  {   //          reset
-                prog = 100; break;//runn = 0; // stop
-            }
-        }
-    }
-    else {
-        if (!silent)
-           msgok(FATAL, getLangSTR(SERVER_DIS));
-    }
-    jsmn_parser p;
-    jsmntok_t t[128]; /* We expect no more than 128 tokens */
 
     jsmn_init(&p);
-    r = jsmn_parse(&p, JSON, strlen(JSON), t,  sizeof(t) / sizeof(t[0]));
+    int r = jsmn_parse(&p, JSON, strlen(JSON), t,  sizeof(t) / sizeof(t[0]));
     if (r < 0) {
 
         log_info("[StoreCore] Error Buffer: %s", JSON);
         if(!silent)
           msgok(FATAL,"%s: %d", getLangSTR(FAILED_TO_PARSE),r);
 
-        cleanup_net(dl_args.req, dl_args.connid, dl_args.tmpid);
         return NULL;
     }
 
@@ -347,38 +387,78 @@ char *check_from_url(const char *url_, enum CHECK_OPTS opt, bool silent)
         log_info("[StoreCore] Error Buffer: %s", JSON);
         if (!silent)    
           msgok(FATAL, getLangSTR(OBJ_EXPECTED));
-        cleanup_net(dl_args.req, dl_args.connid, dl_args.tmpid);
 
         return NULL;
     }
 
-    if(opt == MD5_HASH)
-    {
-        log_info( "[StoreCore] MD5 Hash: %s", JSON);
-
-        for (int i = 1; i < r; i++) {
-            if (jsoneq(JSON, &t[i], "hash") == 0) {
-                snprintf(RES_STR, 255, "%.*s", t[i + 1].end - t[i + 1].start, JSON + t[i + 1].start);
-                cleanup_net(dl_args.req, dl_args.connid, dl_args.tmpid);
-                return strdup(RES_STR);
-            }
-        }//
-    }
-    else if (opt == DL_COUNTER)
-    {
-        log_info("DL_COUNTER_JSON = %s", JSON);
-
-        for (int i = 1; i < r; i++) {
-            if (jsoneq(JSON, &t[i], "number_of_downloads") == 0) {
-                snprintf(RES_STR, 255, "%.*s", t[i + 1].end - t[i + 1].start, JSON + t[i + 1].start);
-                cleanup_net(dl_args.req, dl_args.connid, dl_args.tmpid);
-                return strdup(RES_STR);
-            }
-
-        }//
-
-    }
+     for (int i = 1; i < r; i++) {
+        if (jsoneq(JSON, &t[i], "hash") == 0 || jsoneq(JSON, &t[i], "number_of_downloads") == 0) {
+             snprintf(RES_STR, 255, "%.*s", t[i + 1].end - t[i + 1].start, JSON + t[i + 1].start);
+             return strdup(RES_STR);
+         }
+     }//
 
     return NULL;
 }
 
+bool pingtest(const char* server)
+{
+    log_info( "Ping requested for: %s", server);
+    loadmsg(getLangSTR(SEARCHING));
+    //i->status = 500;
+
+    char tmp[100];
+    sprintf(&tmp[0], "%s/store.db", server);
+
+    CURL* curl;
+    CURLcode res = CURLE_OK;
+    curl = curl_easy_init();
+    if (curl)
+    {
+       FILE* devfile = fopen("/dev/null", "w");
+       curl_easy_setopt(curl, CURLOPT_URL, &tmp[0]);
+       curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+       curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+	   sprintf(&tmp[0], USER_AGENT"-0x%x", SysctlByName_get_sdk_version());
+       log_info("[StoreCore][HTTP] User Agent set to %s", &tmp[0]);
+       curl_easy_setopt(curl, CURLOPT_USERAGENT, &tmp[0]);
+       curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+       curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
+	   // Fail the request if the HTTP code returned is equal to or larger than 400
+       curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+       curl_easy_setopt(curl, CURLOPT_NOBODY, 1l);
+       curl_easy_setopt(curl, CURLOPT_HEADER, 1L); 
+       if(devfile)
+          curl_easy_setopt(curl, CURLOPT_WRITEDATA, devfile); // write to /dev/null
+
+       curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
+       curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
+       res = curl_easy_perform(curl);
+       if(!res) {
+         /* check the size */
+         curl_off_t cl;
+         res = curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &cl);
+         if(!res) {
+            log_info("Download size: %lu", cl);
+         }
+         fclose(devfile);
+         curl_easy_cleanup(curl);
+       }
+       else{
+          log_info( "[StoreCore][HTTP] curl_easy_perform() failed with code %i from Function ini_dl_req url: %s : error: %s", res, server, curl_easy_strerror(res));
+          fclose(devfile);
+          curl_easy_cleanup(curl);
+          sceMsgDialogTerminate();
+          return false;
+       }
+    }
+    else{
+        log_info( "[StoreCore][HTTP] curl_easy_perform() failed Function ini_dl_req url: %s", server);
+        curl_easy_cleanup(curl);
+        sceMsgDialogTerminate();
+        return false;
+    }
+
+    sceMsgDialogTerminate();
+    return true;
+}

@@ -3,7 +3,6 @@
 #include <assert.h>
 
 #include <GLES2/gl2.h>
-#include <user_mem.h> 
 #include "defines.h"
 
 /////// png
@@ -128,17 +127,11 @@ static GLenum get_gl_color_format(const int png_color_format) {
 
 
 /// main
-RawImageData get_raw_image_data_from_png(const void* png_data, const int png_data_size)
+RawImageData get_raw_image_data_from_png(const void* png_data, const int png_data_size, const char* fp)
 {
-    if(png_data != NULL && png_data_size > 8)
-    {
-        
-    } else {
-        log_debug( "%s %p %d", __FUNCTION__, png_data, png_data_size);
-    }
 
-    assert(png_data != NULL && png_data_size > 8);
-    assert(png_check_sig((void*)png_data, 8));
+    //assert(png_data != NULL && png_data_size > 8);
+    //assert(png_check_sig((void*)png_data, 8));
 
     png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
     assert(png_ptr != NULL);
@@ -150,6 +143,9 @@ RawImageData get_raw_image_data_from_png(const void* png_data, const int png_dat
 
     if (setjmp(png_jmpbuf(png_ptr))) {
         log_info("Error reading PNG file!");
+        if(fp)
+           unlink(fp);
+        return (RawImageData) { 512, 512, 0, 0, NULL };
     }
 
     const PngInfo    png_info  = read_and_update_info(png_ptr, info_ptr);
@@ -209,11 +205,22 @@ GLuint load_png_asset_into_texture(const char* relative_path)
 #else
     const unsigned char *png_file     = orbisFileGetFileContent(relative_path);
 #endif
-
+    retry:
     // texture creation
     if( png_file != NULL && _orbisFile_lastopenFile_size > 8)
     {
-        const RawImageData raw_image_data = get_raw_image_data_from_png(png_file, _orbisFile_lastopenFile_size);
+        const RawImageData raw_image_data = get_raw_image_data_from_png(png_file, _orbisFile_lastopenFile_size, relative_path);
+        if (raw_image_data.data == NULL) {
+            //dont leak png_file
+            free((void*)png_file), png_file = NULL;
+
+            if (if_exists("/user/appmeta/NPXS39041/icon0.png"))
+                png_file = orbisFileGetFileContent("/user/appmeta/NPXS39041/icon0.png");
+            else
+                png_file = orbisFileGetFileContent("/user/appmeta/external/NPXS39041/icon0.png");
+
+            goto retry;
+        }
         const GLuint    texture_object_id = load_texture(raw_image_data.width, raw_image_data.height,
                                                          raw_image_data.gl_color_format,
                                                          raw_image_data.data);
@@ -241,7 +248,7 @@ GLuint load_png_data_into_texture(const char* data, int size)
     // texture creation
     if(size>0)
     {
-        const RawImageData raw_image_data = get_raw_image_data_from_png(data,size);
+        const RawImageData raw_image_data = get_raw_image_data_from_png(data,size, NULL);
 
         const GLuint    texture_object_id = load_texture(raw_image_data.width, raw_image_data.height,raw_image_data.gl_color_format,raw_image_data.data);
 
@@ -249,8 +256,6 @@ GLuint load_png_data_into_texture(const char* data, int size)
         tex_size = (vec2){ raw_image_data.width, raw_image_data.height };
         // delete buffers
         release_raw_image_data(&raw_image_data);
-
-    //log_debug( "%s(%s) ret: %d", __FUNCTION__, relative_path, texture_object_id);
 
         return texture_object_id;
     }
@@ -329,5 +334,34 @@ finalise:
     if (row) free(row);
 
     return code;
+}
+
+
+bool is_png_vaild(const char *relative_path)
+{
+    unsigned char *png_file = orbisFileGetFileContent(relative_path);
+    // texture creation
+    if (png_file != NULL && _orbisFile_lastopenFile_size > 0)
+    {
+        const RawImageData raw_image_data = get_raw_image_data_from_png(png_file, _orbisFile_lastopenFile_size, relative_path);
+        if (raw_image_data.data == NULL)
+        {
+            // dont leak png_file
+            log_error("PNG Is corrupted!");
+            free((void *)png_file), png_file = NULL;
+            return false;
+        }
+
+        release_raw_image_data(&raw_image_data);
+        // release_file_data(&png_file);
+        free((void *)png_file), png_file = NULL;
+
+        return true;
+    }
+    else
+        log_debug("%s(%s) returned INVALID!", __FUNCTION__, relative_path);
+
+    // no texture
+    return false;
 }
 

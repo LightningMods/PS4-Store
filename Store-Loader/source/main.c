@@ -3,21 +3,21 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
-#include <sys/fcntl.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
 #include <MsgDialog.h>
-
+#include <sys/stat.h>	
 #include "Header.h"
-#include <ps4sdk.h>
+#include <orbis/SystemService.h>
+
 #include <errno.h>
 #include "lang.h"
 #include "ini.h"
+#include "../external/Jailbreak PRX/include/multi-jb.h"
+#include <curl/curl.h>
 
 int ret;
-int libnetMemId = 0;
-int libsslCtxId = 0;
-int libhttpCtxId = 0;
 
 struct revocation_list {
 	char version[50];
@@ -34,24 +34,7 @@ struct revocation_list revoke_list[] = {
 
 
 static int (*VerifyRSA)(const char* path, const char* pubkey) = NULL;
-static int (*jailbreak_me)(void) = NULL;
-static int (*rejail_multi)(void) = NULL;
 
-int64_t sys_dynlib_load_prx(char* prxPath, int* moduleID)
-{
-	return (int64_t)syscall4(594, prxPath, 0, moduleID, 0);
-}
-
-int64_t sys_dynlib_unload_prx(int64_t prxID)
-{
-	return (int64_t)syscall1(595, (void*)prxID);
-}
-
-
-int64_t sys_dynlib_dlsym(int64_t moduleHandle, const char* functionName, void *destFuncOffset)
-{
-	return (int64_t)syscall3(591, (void*)moduleHandle, (void*)functionName, destFuncOffset);
-}
 
 const unsigned char completeVersion[] = {VERSION_MAJOR_INIT,
 										 '.',
@@ -121,7 +104,13 @@ int MD5_hash_compare(const char* file1, const char* file2)
 	unsigned char c2[MD5_HASH_LENGTH];
 	int i;
 	FILE* f1 = fopen(file1, "rb");
+	if(!f1) return DIFFERENT_HASH;
+	
 	FILE* f2 = fopen(file2, "rb");
+	if(!f2){
+	  fclose(f1);
+          return DIFFERENT_HASH;
+	}
 	MD5_CTX mdContext;
 
 	MD5_CTX mdContext2;
@@ -173,7 +162,6 @@ bool if_exists(const char* path)
 
 bool update_version_by_hash(char* path)
 {
-	bool failed = false;
     int fd = sceKernelOpen(path, 0, 0);
 	if (fd <= 0) {
 		logshit("Cant open %s\n", path);
@@ -251,11 +239,11 @@ bool checkForUpdate(char *cdnbuf)
 
 copy_update:
     msgok(getLangSTR(UPDATE_REQ));
-	loadmsg(getLangSTR(DOWNLOADING_UPDATE));
+	progstart(getLangSTR(DOWNLOADING_UPDATE));
 	unlink("/user/app/NPXS39041/homebrew.elf");
     unlink("/user/app/NPXS39041/local.md5");
         
-     if(download_file(libnetMemId, libhttpCtxId, cdnbuf, "/user/app/NPXS39041/homebrew.elf") == 200)
+     if(download_file(cdnbuf, "/user/app/NPXS39041/homebrew.elf") == 200)
      {
 	     if (copyFile("/user/app/NPXS39041/remote.md5", "/user/app/NPXS39041/local.md5") != 0)
 			 return false;
@@ -272,18 +260,13 @@ copy_update:
 static int print_ini_info(void* user, const char* section, const char* name,
 	const char* value)
 {
-	static char prev_section[50] = "";
-
-	if (strcmp(section, prev_section)) {
-		logshit("%s[%s]\n", (prev_section[0] ? "\n" : ""), section);
-		strncpy(prev_section, section, sizeof(prev_section));
-		prev_section[sizeof(prev_section) - 1] = '\0';
-	}
-	logshit("%s = %s\n", name, value);
 
 	StoreLoaderOptions* pconfig = (StoreLoaderOptions*)user;
 
 #define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
+
+
+	logshit("%s = %s\n", name, value);
 
 	if (MATCH("Settings", "Secure_Boot")) {
 		pconfig->SECURE_BOOT = atoi(value);
@@ -297,94 +280,17 @@ static int print_ini_info(void* user, const char* section, const char* name,
 
 	return 1;
 }
-
-static bool touch_file(char* destfile)
-{
-	int fd = open(destfile, O_WRONLY | O_CREAT | O_TRUNC, 0777);
-	if (fd > 0) {
-		close(fd);
-		return true;
-	}
-	else
-		return false;
-}
-
-int main()
-{
-
-	init_STOREGL_modules();
-
-	int libjb = -1, librsa = -1, dl_ret = 0;
+void loader_rooted(){
+	StoreLoaderOptions config;
+	int dl_ret = 0;
 	char cdnbuf[255];
+    char buff[600];
 
-	sceSystemServiceHideSplashScreen();
-	sceCommonDialogInitialize();
-    sceMsgDialogInitialize();
-
-	ret = netInit();
-	if (ret < 0) 
-		logshit("netInit() error: 0x%08X\n", ret);
-	
-	libnetMemId = ret;
-
-	ret = sceSslInit(SSL_HEAP_SIZE);
-	if (ret < 0)
-		logshit("sceSslInit() error %x\n", ret);
-
-	libsslCtxId = ret;
-
-	logshit("libsslCtxId = %x\n", libsslCtxId);
-
-
-	ret = sceHttpInit(libnetMemId, libsslCtxId, HTTP_HEAP_SIZE);
-	if (ret < 0)
-		logshit("sceHttpInit() error %x\n", ret);
-
-	libhttpCtxId = ret;
-
-
-	if (!LoadLangs(PS4GetLang())) {
-		if (!LoadLangs(0x01)) {
-			msgok("Failed to load Backup Lang...\nThe App is unable to continue"); 
-			goto exit_sec;
-		}
-		else
-			logshit("Loaded the backup, lang %i failed to load", PS4GetLang());
-	}
-
-     sys_dynlib_load_prx("/app0/Media/rsa.sprx", &librsa);
-     sys_dynlib_load_prx("/app0/Media/jb.prx", &libjb);
-
-     if (!sys_dynlib_dlsym(libjb, "jailbreak_me", &jailbreak_me))
-     {
-          logshit("jailbreak_me resolved from PRX\n");
-   
-            if((ret = jailbreak_me()) != 0){//
-				msgok("%s: %x\n", getLangSTR(FATAL_JB), ret); goto exit_sec;
-            }
-            else 
-				printf("jailbreak_me() returned %i\n", ret);
-     }
-     else{
-        msgok("%s: %x\n", getLangSTR(FATAL_JB),ret); goto exit_sec;
-	 }
-
-	 if (!sys_dynlib_dlsym(libjb, "rejail_multi", &rejail_multi))
-	     logshit("rejail_multi resolved from PRX\n");
-	 else {
-		msgok("%s: %x\n", getLangSTR(FATAL_REJAIL),ret); goto exit_sec;
-	 }
-		
-
-
-	if (jailbreak_me != NULL && rejail_multi != NULL)
-	{
-		logshit("After jb\n");
+	    logshit("======== HELLO FROM ROOTED LOADER ======\n");
 		mkdir("/user/app/NPXS39041/", 0777);
 		mkdir("/user/app/NPXS39041/storedata/", 0777);
 		mkdir("/user/app/NPXS39041/logs/", 0777);
 		unlink("/user/app/NPXS39041/logs/loader.log");
-		StoreLoaderOptions config;
 		
 
 		logshit("[STORE_GL_Loader:%s:%i] -----  All Internal Modules Loaded  -----\n", __FUNCTION__, __LINE__);
@@ -392,7 +298,7 @@ int main()
 		logshit("[STORE_GL_Loader:%s:%i] -----  STORE Version: %s  -----\n", __FUNCTION__, __LINE__, completeVersion);
 		logshit("----------------------------------------------- -------------------------\n");
 
-		config.opt[CDN_URL] = "http://api.pkg-zone.com";
+		config.opt[CDN_URL] = "https://api.pkg-zone.com";
 		config.SECURE_BOOT = true;
 		config.Copy_INI = false;
 
@@ -402,7 +308,7 @@ int main()
 
 			int error = ini_parse("/mnt/usb0/settings.ini", print_ini_info, &config);
 			if (error) {
-				printf("Bad config file (first error on line %d)!\n", error);
+				logshit("Bad config file (first error on line %d)!\n", error);
 			}
 			else {
 
@@ -418,14 +324,13 @@ int main()
 		    {
 				logshit("[STORE_GL_Loader:%s:%i] ----- APP INI Not Found, Making ini ---\n", __FUNCTION__, __LINE__);
 
-				char* buff[1024];
-				memset(buff, 0, 1024);
-				snprintf(buff, 1023, "[Settings]\nCDN=http://api.pkg-zone.com\nSecure_Boot=1\ntemppath=/user/app/NPXS39041/downloads\nStoreOnUSB=0\nShow_install_prog=1\nHomeMenu_Redirection=0\nDaemon_on_start=1\nLegacy=0\n");
+				memset(&buff[0], 0, sizeof buff);
+				snprintf(&buff[0], sizeof buff, "[Settings]\nCDN=https://api.pkg-zone.com\nSecure_Boot=1\ntemppath=/user/app/NPXS39041/downloads\nStoreOnUSB=0\nShow_install_prog=1\nHomeMenu_Redirection=0\nDaemon_on_start=1\nLegacy=0\n");
 
 				int fd = open("/user/app/NPXS39041/settings.ini", O_WRONLY | O_CREAT | O_TRUNC, 0777);
 				if (fd >= 0)
 				{
-					write(fd, buff, strlen(buff));
+					write(fd, &buff[0], strlen(&buff[0]));
 					close(fd);
 				}
 				else
@@ -447,14 +352,11 @@ int main()
       }
 		
 
-
-	start:
-
 		logshit("[STORE_GL_Loader:%s:%i] ----- CDN Url = %s ---\n", __FUNCTION__, __LINE__, config.opt[CDN_URL]);
 
-		ret = pingtest(libnetMemId, libhttpCtxId, config.opt[CDN_URL]);
+		ret = pingtest(config.opt[CDN_URL]);
 		if (ret != 0)
-			msgok("%s: 0x%x\n",getLangSTR(PING_FAILED), ret);
+			msgok("%s: %s\n",getLangSTR(PING_FAILED), curl_easy_strerror(ret));
 		else if (ret == 0)
 		{
 			logshit("[STORE_GL_Loader:%s:%i] ----- Ping Successfully ---\n", __FUNCTION__, __LINE__);
@@ -463,9 +365,9 @@ int main()
 
 			sceMsgDialogTerminate();
 
-			if ((dl_ret = download_file(libnetMemId, libhttpCtxId, cdnbuf, "/user/app/NPXS39041/remote.md5")) == 200){
-
-				if (!sys_dynlib_dlsym(librsa, "VerifyRSA", &VerifyRSA) && VerifyRSA != NULL)
+			if ((dl_ret = download_file(cdnbuf, "/user/app/NPXS39041/remote.md5")) == 200){
+				logshit("[STORE_GL_Loader:%s:%i] ----- Downloaded remote.md5 ---\n", __FUNCTION__, __LINE__);
+				if (VerifyRSA)
 				{
 					logshit("[STORE_GL_Loader:%s:%i] ----- CheckForUpdate() ---\n", __FUNCTION__, __LINE__);
 
@@ -490,7 +392,7 @@ int main()
 
 
 							logshit("[STORE_GL_Loader:%s:%i] ----- Downloading RSA Sig CDN: %s ---\n", __FUNCTION__, __LINE__, cdnbuf);
-							if (download_file(libnetMemId, libhttpCtxId, cdnbuf, "/user/app/NPXS39041/homebrew.elf.sig") == 200)
+							if (download_file(cdnbuf, "/user/app/NPXS39041/homebrew.elf.sig") == 200)
 							{
 								loadmsg(getLangSTR(RSA_LOAD));
 
@@ -504,8 +406,9 @@ int main()
 								   unlink("/user/app/NPXS39041/local.md5");
 								   goto exit_sec;
 								}
-								else
+								else{
 									logshit("Success!\n\n RSA Check has passed\n");
+								}
 
 							   logshit("VerifyRSA from PRX return %x\n", ret);
 							}
@@ -515,22 +418,10 @@ int main()
 							}
 						}
 
-						logshit("[STORE_GL_Loader:%s:%i] ----- Cleaning Up Network ---\n", __FUNCTION__, __LINE__);
-
-						sceHttpTerm(libhttpCtxId);
-						sceSslTerm(libsslCtxId);
-
-						sceNetPoolDestroy();
-						sceNetTerm();
-
-						if (copyFile("/user/app/NPXS39041/homebrew.elf", "/data/self/Store.self") != 0) goto err;
-
-						logshit("[STORE_GL_Loader:%s:%i] ----- calling rejail_multi ---\n", __FUNCTION__, __LINE__);
-						rejail_multi();
-
-						logshit("[STORE_GL_Loader:%s:%i] ----- Launching() ---\n", __FUNCTION__, __LINE__);
-						if (sceSystemServiceLoadExec("/data/self/Store.self", 0) == 0)
-							logshit("[STORE_GL_Loader:%s:%i] ----- Launched (shouldnt see) ---\n", __FUNCTION__, __LINE__);
+						if (copyFile("/user/app/NPXS39041/homebrew.elf", "/data/self/Store.self") != 0) 
+						    goto err;
+						else
+						   return;
 					}
 					else
 						msgok(getLangSTR(REINSTALL_PKG));
@@ -541,25 +432,64 @@ int main()
 			}
 			else 
 				goto err;
-		}//else if (ret == 0)
 	} // else if (ret == 0)
 	else
     	logshit("[STORE_GL_Loader:%s:%i] -----  JAILBREAK FAILED  -----\n", __FUNCTION__, __LINE__);
 
 err:
    msgok("%s\n\n%s\n", getLangSTR(LOADER_ERROR), getLangSTR(MORE_INFO));
-
 exit_sec:
-   if (rejail_multi != NULL)
-   {
-	   logshit("Rejailing App");
-	   rejail_multi();
-	   printf("App rejailed\n");
-   }
-
-   return sceSystemServiceLoadExec("exit", 0);
+   sceSystemServiceLoadExec("exit", 0);
 }
 
+int main(int argc, char* argv[])
+{
+	int librsa = -1;
+
+	init_STOREGL_modules();
+
+	sceSystemServiceHideSplashScreen();
+	sceCommonDialogInitialize();
+    sceMsgDialogInitialize();
+
+    curl_global_init(CURL_GLOBAL_ALL);
+
+	if (!LoadLangs(PS4GetLang())) {
+		if (!LoadLangs(0x01)) {
+			msgok("Failed to load Backup Lang...\nThe App is unable to continue"); 
+			goto exit_sec;
+		}
+		else
+			logshit("Loaded the backup, lang %i failed to load", PS4GetLang());
+	}
+
+    librsa = sceKernelLoadStartModule("/app0/Media/rsa.prx", 0, NULL, 0, 0, 0);
+    int ret = sceKernelDlsym(librsa, "VerifyRSA", (void**)&VerifyRSA);
+    if (ret >= 0){
+        logshit("VerifyRSA resolved from PRX\n");
+        if (!VerifyRSA){
+             msgok("%s: %x\n", getLangSTR(FATAL_JB),ret); 
+			 goto err;
+		}
+		else{
+			jbc_run_as_root(loader_rooted, NULL, CWD_ROOT);
+			logshit("jbc_run_as_root() succesful\n");
+		}
+    }
+	else{
+        msgok("%s: %x\n", getLangSTR(FATAL_JB),ret); 
+		goto err;
+	}
+
+	logshit("[STORE_GL_Loader:%s:%i] ----- Launching() ---\n", __FUNCTION__, __LINE__);
+	if (sceSystemServiceLoadExec("/data/self/Store.self", (const char**)argv) == 0)
+	    logshit("[STORE_GL_Loader:%s:%i] ----- Launched (shouldnt see) ---\n", __FUNCTION__, __LINE__);
+
+err:
+   msgok("%s\n\n%s\n", getLangSTR(LOADER_ERROR), getLangSTR(MORE_INFO));
+exit_sec:
+   return sceSystemServiceLoadExec("exit", 0);
+}
 void catchReturnFromMain(int exit_code)
 {
 }

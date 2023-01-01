@@ -16,6 +16,7 @@ extern "C" {
 #define ORBIS_COMMON_DIALOG_MAGIC_NUMBER 0xC0D1A109
 
 
+
 typedef enum OrbisCommonDialogStatus {
 	ORBIS_COMMON_DIALOG_STATUS_NONE				= 0,
 	ORBIS_COMMON_DIALOG_STATUS_INITIALIZED		= 1,
@@ -269,78 +270,139 @@ int sceImeDialogInit( const OrbisImeDialogParam *param, const OrbisImeParamExten
 
 
 
-#define ORBIS_SYSMODULE_MESSAGE_DIALOG			0x00a4
-#define ORBIS_MSG_DIALOG_MODE_USER_MSG				(1)
-#define ORBIS_MSG_DIALOG_BUTTON_TYPE_WAIT				(5)
-#define ORBIS_MSG_DIALOG_BUTTON_TYPE_OK				(0)
+#define ORBIS_MSG_DIALOG_BUTTON_ID_INVALID			(0)
+#define ORBIS_MSG_DIALOG_BUTTON_ID_OK				(1)
+#define ORBIS_MSG_DIALOG_BUTTON_ID_YES				(1)
+#define ORBIS_MSG_DIALOG_BUTTON_ID_NO				(2)
+#define ORBIS_MSG_DIALOG_BUTTON_ID_BUTTON1			(1)
+#define ORBIS_MSG_DIALOG_BUTTON_ID_BUTTON2			(2)
+
+typedef int32_t OrbisUserServiceUserId;
+typedef int32_t OrbisMsgDialogButtonId;
+typedef int32_t OrbisMsgDialogProgressBarTarget;
+
+typedef enum OrbisMsgDialogMode {
+	ORBIS_MSG_DIALOG_MODE_USER_MSG = 1,
+	ORBIS_MSG_DIALOG_MODE_PROGRESS_BAR = 2,
+	ORBIS_MSG_DIALOG_MODE_SYSTEM_MSG = 3,
+} OrbisMsgDialogMode;
+
+typedef struct OrbisMsgDialogResult {
+	OrbisMsgDialogMode mode;
+	int32_t result;
+	OrbisMsgDialogButtonId buttonId;
+	char reserved[32];
+} OrbisMsgDialogResult;
+
+typedef enum OrbisMsgDialogButtonType {
+	ORBIS_MSG_DIALOG_BUTTON_TYPE_OK = 0,
+	ORBIS_MSG_DIALOG_BUTTON_TYPE_YESNO = 1,
+	ORBIS_MSG_DIALOG_BUTTON_TYPE_NONE = 2,
+	ORBIS_MSG_DIALOG_BUTTON_TYPE_OK_CANCEL = 3,
+	ORBIS_MSG_DIALOG_BUTTON_TYPE_WAIT = 5,
+	ORBIS_MSG_DIALOG_BUTTON_TYPE_WAIT_CANCEL = 6,
+	ORBIS_MSG_DIALOG_BUTTON_TYPE_YESNO_FOCUS_NO = 7,
+	ORBIS_MSG_DIALOG_BUTTON_TYPE_OK_CANCEL_FOCUS_CANCEL = 8,
+	ORBIS_MSG_DIALOG_BUTTON_TYPE_2BUTTONS = 9,
+} OrbisMsgDialogButtonType;
+
+typedef enum OrbisMsgDialogProgressBarType {
+	ORBIS_MSG_DIALOG_PROGRESSBAR_TYPE_PERCENTAGE = 0,
+	ORBIS_MSG_DIALOG_PROGRESSBAR_TYPE_PERCENTAGE_CANCEL = 1,
+} OrbisMsgDialogProgressBarType;
+
+typedef enum OrbisMsgDialogSystemMessageType {
+	ORBIS_MSG_DIALOG_SYSMSG_TYPE_TRC_EMPTY_STORE = 0,
+	ORBIS_MSG_DIALOG_SYSMSG_TYPE_TRC_PSN_CHAT_RESTRICTION = 1,
+	ORBIS_MSG_DIALOG_SYSMSG_TYPE_TRC_PSN_UGC_RESTRICTION = 2,
+	ORBIS_MSG_DIALOG_SYSMSG_TYPE_CAMERA_NOT_CONNECTED = 4,
+	ORBIS_MSG_DIALOG_SYSMSG_TYPE_WARNING_PROFILE_PICTURE_AND_NAME_NOT_SHARED = 5,
+} OrbisMsgDialogSystemMessageType;
 
 typedef struct OrbisMsgDialogButtonsParam {
-	const char *msg1;					
-	const char *msg2;					
-	char reserved[32];					
+	const char *msg1;
+	const char *msg2;
+	char reserved[32];
 } OrbisMsgDialogButtonsParam;
 
 typedef struct OrbisMsgDialogUserMessageParam {
-	int32_t buttonType;				
-	int :32;										
-	const char *msg;								
-	OrbisMsgDialogButtonsParam *buttonsParam;		
-	char reserved[24];								
-													
+	OrbisMsgDialogButtonType buttonType;
+	int :32;
+	const char *msg;
+	OrbisMsgDialogButtonsParam *buttonsParam;
+	char reserved[24];
 } OrbisMsgDialogUserMessageParam;
 
-typedef struct OrbisMsgDialogSystemMessageParam {
-	int32_t sysMsgType;		
-	char reserved[32];								
-} OrbisMsgDialogSystemMessageParam;
-
 typedef struct OrbisMsgDialogProgressBarParam {
-	int32_t barType;			
-	int :32;										
-	const char *msg;								
-	char reserved[64];								
+	OrbisMsgDialogProgressBarType barType;
+	int :32;
+	const char *msg;
+	char reserved[64];
 } OrbisMsgDialogProgressBarParam;
 
-
+typedef struct OrbisMsgDialogSystemMessageParam {
+	OrbisMsgDialogSystemMessageType sysMsgType;
+	char reserved[32];
+} OrbisMsgDialogSystemMessageParam;
 
 typedef struct OrbisMsgDialogParam {
-	OrbisCommonDialogBaseParam baseParam; 	
-	size_t size;									
-	int32_t mode;							
-	int :32;	
-	OrbisMsgDialogUserMessageParam *userMsgParam;	
-	OrbisMsgDialogProgressBarParam *progBarParam;		
-	OrbisMsgDialogSystemMessageParam *sysMsgParam;	
-	int32_t userId;					
-	char reserved[40];								
-	int :32;										
+	OrbisCommonDialogBaseParam baseParam;
+	size_t size;
+	OrbisMsgDialogMode mode;
+	int :32;
+	OrbisMsgDialogUserMessageParam *userMsgParam;
+	OrbisMsgDialogProgressBarParam *progBarParam;
+	OrbisMsgDialogSystemMessageParam *sysMsgParam;
+	OrbisUserServiceUserId userId;
+	char reserved[40];
+	int :32;
 } OrbisMsgDialogParam;
 
 
+// Initialize the message dialog. Should be called before trying to use the
+// message dialog.
+int32_t sceMsgDialogInitialize(void);
 
-typedef struct OrbisMsgDialogResult {
-	int32_t mode;							
-													
-	int32_t result;									
-													
-	int32_t buttonId;					
-													
-	char reserved[32];								
-													
-} OrbisMsgDialogResult;
+// Display the message dialog.
+int32_t sceMsgDialogOpen(const OrbisMsgDialogParam *param);
 
+// Get the result of the message dialog after the user closes the dialog.
+// This can be used to detect which option was pressed (yes, no, cancel, etc).
+int32_t sceMsgDialogGetResult(OrbisMsgDialogResult *result);
 
-static inline
-void OrbisMsgDialogParamInitialize(OrbisMsgDialogParam *param)
+// Get the status of the message dialog. This can be used to check if a
+// message dialog is initialized, is being displayed, or is finished.
+OrbisCommonDialogStatus sceMsgDialogGetStatus();
+
+// Update the current status of the message dialog.
+OrbisCommonDialogStatus sceMsgDialogUpdateStatus(void);
+
+// Increase the message dialog progress bar percentage.
+// OrbisMsgDialogMode must be initialized with ORBIS_MSG_DIALOG_MODE_PROGRESS_BAR.
+int32_t sceMsgDialogProgressBarInc(OrbisMsgDialogProgressBarTarget target, uint32_t delta);
+
+// Add a message to the message dialog progress bar.
+// OrbisMsgDialogMode must be initialized with ORBIS_MSG_DIALOG_MODE_PROGRESS_BAR.
+int32_t sceMsgDialogProgressBarSetMsg(OrbisMsgDialogProgressBarTarget target, const char *barMsg);
+
+// Set the message dialog progress bar immediately without animation.
+// OrbisMsgDialogMode must be initialized with ORBIS_MSG_DIALOG_MODE_PROGRESS_BAR.
+int32_t sceMsgDialogProgressBarSetValue(OrbisMsgDialogProgressBarTarget target, uint32_t rate);
+
+// Close the message dialog.
+int32_t sceMsgDialogClose(void);
+
+// Terminate the message dialog. Should be called when all message dialog
+// operations are finished.
+int32_t sceMsgDialogTerminate(void);
+
+static inline void OrbisMsgDialogParamInitialize(OrbisMsgDialogParam *param)
 {
 	memset( param, 0x0, sizeof(OrbisMsgDialogParam) );
 
 	_sceCommonDialogBaseParamInit( &param->baseParam );
 	param->size = sizeof(OrbisMsgDialogParam);
 }
-
-
-char *StoreKeyboard(const char *Title, char *initialTextBuffer);
 
 #endif
 

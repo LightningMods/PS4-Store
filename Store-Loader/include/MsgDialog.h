@@ -11,7 +11,6 @@ extern "C" {
 
 #include <CommonDialog.h>
 
-#define ORBIS_SYSMODULE_MESSAGE_DIALOG			0x00a4
 #define ORBIS_MSG_DIALOG_MODE_USER_MSG				(1)
 #define ORBIS_MSG_DIALOG_BUTTON_TYPE_WAIT				(5)
 #define ORBIS_MSG_DIALOG_BUTTON_TYPE_OK				(0)
@@ -71,7 +70,8 @@ typedef struct OrbisMsgDialogResult {
 													
 } OrbisMsgDialogResult;
 
-
+int sceMsgDialogTerminate();
+int sceMsgDialogInitialize();
 static inline
 void OrbisMsgDialogParamInitialize(OrbisMsgDialogParam *param)
 {
@@ -80,8 +80,19 @@ void OrbisMsgDialogParamInitialize(OrbisMsgDialogParam *param)
 	_sceCommonDialogBaseParamInit( &param->baseParam );
 	param->size = sizeof(OrbisMsgDialogParam);
 }
+int sceMsgDialogUpdateStatus();
+// Add a message to the message dialog progress bar.
+// OrbisMsgDialogMode must be initialized with ORBIS_MSG_DIALOG_MODE_PROGRESS_BAR.
+int32_t sceMsgDialogProgressBarSetMsg(int target, const char *barMsg);
+// Display the message dialog.
+int32_t sceMsgDialogOpen(const OrbisMsgDialogParam *param);
+// Set the message dialog progress bar immediately without animation.
+// OrbisMsgDialogMode must be initialized with ORBIS_MSG_DIALOG_MODE_PROGRESS_BAR.
+int32_t sceMsgDialogProgressBarSetValue(int idc, uint32_t rate);
 
-
+// Get the result of the message dialog after the user closes the dialog.
+// This can be used to detect which option was pressed (yes, no, cancel, etc).
+int32_t sceMsgDialogGetResult(OrbisMsgDialogResult *result);
 #endif
 
 #ifdef __cplusplus

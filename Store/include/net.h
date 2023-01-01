@@ -3,8 +3,7 @@
 
 #pragma once
 #include <stdint.h>
-#include "defines.h"
-#include "GLES2_common.h"
+#include <curl/curl.h>
 #ifdef __cplusplus 
 extern "C" {
 #endif
@@ -58,8 +57,12 @@ typedef union OrbisNetCtlInfo {
 } OrbisNetCtlInfo;
 
 int sceNetCtlGetInfo(int, void *);
-int sceNetCtlInit();
-
+int sceNetPoolCreate(
+	const char *name,
+	int size,
+	int flags
+);
+int sceNetInit();
 // Empty Comment
 void CA_MGMT_allocCertDistinguishedName();
 // Empty Comment
@@ -480,7 +483,7 @@ typedef void* OrbisHttpEpollHandle;
 #define	ORBIS_HTTP_NB_EVENT_RESOLVED		0x00010000
 #define	ORBIS_HTTP_NB_EVENT_RESOLVER_ERR	0x00020000
 
-typedef struct OrbisHttpNBEvent {
+typedef struct {
 	uint32_t	events;
 	uint32_t	eventDetail;
 	int			id;
@@ -595,8 +598,6 @@ typedef struct OrbisHttpMemoryPoolStats{
 	size_t		currentInuseSize;
 	int32_t	reserved;
 } OrbisHttpMemoryPoolStats;
-
-
 
 // Empty Comment
 int sceHttpAbortRequest(int reqId);
@@ -717,7 +718,7 @@ void sceHttpSetAcceptEncodingGZIPEnabled();
 // Empty Comment
 int sceHttpSetAuthEnabled(int id, int isEnable);
 // Empty Comment
-sceHttpSetAuthInfoCallback(int id, OrbisHttpAuthInfoCallback cbfunc, void *userArg);
+int sceHttpSetAuthInfoCallback(int id, OrbisHttpAuthInfoCallback cbfunc, void *userArg);
 // Empty Comment
 int sceHttpSetAutoRedirect(int id, int isEnable);
 // Empty Comment
@@ -740,8 +741,6 @@ void sceHttpSetCookieSendCallback();
 void sceHttpSetCookieTotalMaxSize();
 // Empty Comment
 void sceHttpSetDefaultAcceptEncodingGZIPEnabled();
-// Empty Comment
-void sceHttpSetEpoll();
 // Empty Comment
 void sceHttpSetEpollId();
 // Empty Comment
@@ -808,93 +807,66 @@ void sceHttpUriSweepPath();
 void sceHttpUriUnescape();
 // Empty Comment
 int sceHttpWaitRequest(OrbisHttpEpollHandle eh, OrbisHttpNBEvent* nbev, int maxevents, int timeout);
-#endif
 
+
+int sceHttpSetEpoll(
+    int id,
+    OrbisHttpEpollHandle eh,
+    void* userArg
+);
 
 typedef enum token_name
 {
-    ID,
-    NAME,
-    DESC,
-    IMAGE,
-    PACKAGE,
-    VERSION,
-    PICPATH,
-    DESC_1,
-    DESC_2,
-    REVIEWSTARS,
-    SIZE,
-    AUTHOR,
-    APPTYPE,
-    PV,
-    MAIN_ICON_PATH,
-    MAIN_MENU_PIC,
-    RELEASEDATE,
-    TOTAL_NUM_OF_TOKENS,
-    // should match NUM_OF_USER_TOKENS
+	ID,
+	NAME,
+	DESC,
+	IMAGE,
+	PACKAGE,
+	VERSION,
+	PICPATH,
+	DESC_1,
+	DESC_2,
+	REVIEWSTARS,
+	SIZE,
+	AUTHOR,
+	APPTYPE,
+	PV,
+	MAIN_ICON_PATH,
+	MAIN_MENU_PIC,
+	RELEASEDATE,
+	TOTAL_NUM_OF_TOKENS,
+	// should match NUM_OF_USER_TOKENS
 } token_name;
 
 static const char* used_token[] =
 {
-    "id",
-    "name",
-    "desc",
-    "image",
-    "package",
-    "version",
-    "picpath",
-    "desc_1",
-    "desc_2",
-    "ReviewStars",
-    "Size",
-    "Author",
-    "apptype",
-    "pv",
-    "main_icon_path",
-    "main_menu_pic",
-    "releaseddate"
+	"id",
+	"name",
+	"desc",
+	"image",
+	"package",
+	"version",
+	"picpath",
+	"desc_1",
+	"desc_2",
+	"ReviewStars",
+	"Size",
+	"Author",
+	"apptype",
+	"pv",
+	"main_icon_path",
+	"main_menu_pic",
+	"releaseddate"
 };
 
 #define NUM_OF_USER_TOKENS  (sizeof(used_token) / sizeof(used_token[0]))
 
-// single item infos, for the page_info_t below
-
 typedef struct
 {
-    char* off;
-    char* buffer;
-    int   len;
+	char* off;
+	char* buffer;
+	int   len;
 } item_idx_t;
-
-typedef struct
-{
-    item_idx_t token[NUM_OF_USER_TOKENS]; // indexed tokens from json_data
-    ivec2      token_i[NUM_OF_USER_TOKENS]; // enough for indexing all tokens, in ft-gl VBO
-    int        num_of_texts;                // num of indexed tokens we print to screen
-    GLuint     texture;                     // the textured icon from PICPATH
-    vec4       frect;                       // the normalized position and size of texture icon
-    vec2       origin;  // normalized origin point
-    // 5x3
-    vec2       pen;
-    char       in_atlas;
-} page_item_t;
-
-
-// the single page holds its infos
-typedef struct
-{
-    // max NUM_OF_TEXTURES per page, max 8 items
-    int  num_of_items;
-    // each page will hold its json_data
-    char* json_data;
-    // and its ft-gl vertex buffer
-    vertex_buffer_t* vbo;
-    // all indexed tokens, per item... (zerocopy, eh)
-    page_item_t  item[NUM_OF_TEXTURES];
-    // from 1, refrect json num in filename
-    int page_num;
-} page_info_t;
-
 
 typedef struct
 {
@@ -906,15 +878,27 @@ typedef struct
 		tmpid,
 		status, // thread status
 		g_idx;  // global item index in icon panel
+	CURL* curl_handle;
+	curl_off_t last_off;
+	FILE* dlfd;
 	double      progress;
 	uint64_t    contentLength;
 	item_idx_t* token_d;  // token_data item index type pointer
 	bool is_threaded;
+	int epoll_handle;
+	int nbEvent;
 } dl_arg_t;
 
 
-int dl_from_url(const char* url_, const char* dst_, bool is_threaded);
+#define ORBIS_HTTP_ERROR_EAGAIN 0x80431082
+#define ORBIS_HTTP_ERROR_BUSY 0x80431021
+
+int dl_from_url(const char *url_, const char *dst_, dl_arg_t* arg, bool is_threaded);
+int ini_dl_req(dl_arg_t *i);
 int dl_from_url_v2(const char* url_, const char* dst_, item_idx_t* t);
+void cleanup_net(int req, int connid, int tmpid, OrbisHttpEpollHandle epoll_handle);
+#endif
+
 
 #ifdef __cplusplus
 }

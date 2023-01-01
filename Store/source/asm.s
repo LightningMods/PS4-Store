@@ -4,7 +4,6 @@
 .global    kernelRdmsr
 .global    cpu_enable_wp
 .global    cpu_disable_wp
-.global    call_not_RESOLVED_Exception
 
 kernelRdmsr:
     mov    ecx, edi
@@ -28,7 +27,7 @@ cpu_disable_wp:
   .intel_syntax noprefix
 .text
 
-.global syscall, syscall1, syscall2, syscall3, syscall4 ,Sysctl, Fork
+.global syscall_alt, syscall1, syscall2, syscall3, syscall4 ,Sysctl, Fork
 
 
 Fork:
@@ -54,7 +53,7 @@ Sysctl:
 
 
 
-syscall:
+syscall_alt:
     mov rax,0
     mov r10,rcx
     syscall
@@ -101,23 +100,6 @@ err:
     mov rdx,-1
     ret
 
-
-    .section .rodata
-
-    # elf
-    .global daemon_eboot
-    .type   daemon_eboot, @object
-    .align  4
-daemon_eboot:
-    .incbin "../itemz-daemon/bin/eboot.bin"
-daemon_eboot_end:
-    .global daemon_eboot_size
-    .type   daemon_eboot_size, @object
-    .align  4
-daemon_eboot_size:
-    .int    daemon_eboot_end - daemon_eboot
-
-    
     # elf
     .global lang_ini
     .type   lang_ini_sz, @object

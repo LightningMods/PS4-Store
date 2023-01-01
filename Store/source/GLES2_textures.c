@@ -10,8 +10,12 @@
 #include <math.h>
 
 #include "defines.h"
+#ifdef __ORBIS__
 #include "shaders.h"
-
+#else
+#include "pc_shaders.h"
+#endif
+#include "GLES2_common.h"
 
 /*
     we setup two SL programs:

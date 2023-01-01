@@ -10,9 +10,12 @@
 
 #include "defines.h"
 #include <semaphore.h> 
-#include <user_mem.h> // lmalloc()
+#ifdef __ORBIS__
 #include "shaders.h"
-
+#else
+#include "pc_shaders.h"
+#endif
+#include "GLES2_common.h"
 
 extern vec4 c[8];       // palette
 extern vec2 resolution;
@@ -112,9 +115,7 @@ void create_atlas_from_tokens(layout_t *l)
 
 void create_tcache(layout_t *l)
 {   
-    size_t fmem = -1;
-    log_debug("1. sceKernelAvailableFlexibleMemorySize ret:%d, %zub", sceKernelAvailableFlexibleMemorySize(&fmem), fmem);
-
+  
     // malloc and zerofill
     memset(&cache, 0, sizeof(tcache_t));
     // compute how many pages we need
@@ -214,14 +215,14 @@ create_atlas_page:
             icon_panel->item_d[ g_idx ].texture = load_png_asset_into_texture(icon_panel->item_d[ g_idx ].token_d[ PICPATH ].off);
 
             // 1. draw squared icon into texture atlas
-            if( icon_panel->item_d[ g_idx ].texture == 0) {
+            if( icon_panel->item_d[ g_idx ].texture == GL_NULL) {
                 on_GLES2_Render_icon(USE_COLOR, fallback_t, 2, &r, NULL);
             } else {
                 on_GLES2_Render_icon(USE_COLOR, icon_panel->item_d[ g_idx ].texture, 2, &r, NULL);
             }
 
             // 2. now we can destroy the single icon texture
-            if( icon_panel->item_d[ g_idx ].texture != 0 )
+            if( icon_panel->item_d[ g_idx ].texture != GL_NULL )
             {
                 log_debug( "glDeleteTextures(%d)", icon_panel->item_d[ g_idx ].texture);
                 glDeleteTextures(1, &icon_panel->item_d[ g_idx ].texture);
@@ -232,7 +233,7 @@ create_atlas_page:
             // 4. finally, save UV for this item
             icon_panel->item_d[ g_idx ].uv = uv;
         }
-        log_debug( "2. page %d, sceKernelAvailableFlexibleMemorySize ret:%d, %zub", j, sceKernelAvailableFlexibleMemorySize(&fmem), fmem);
+
 
         j++; // advance for next atlas page
 
@@ -252,7 +253,7 @@ create_atlas_page:
         if(texBuffer) free(texBuffer);
     }
 
-    log_debug( "3. sceKernelAvailableFlexibleMemorySize ret:%d, %zub", sceKernelAvailableFlexibleMemorySize(&fmem), fmem);
+ 
 }
 
 void InitTextureAtlas(void) // one from cache

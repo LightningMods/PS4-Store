@@ -1,24 +1,40 @@
 #include "defines.h"
 #include <utils.h>
-#include <sys/signal.h>
-#include <dumper.h>
+#include <signal.h>
 #include <orbisGl.h>
-
+#include <errno.h>
+#include <orbis/SystemService.h>
 int libcmi = -1;
+int32_t crash_test_2(void* pCommon)
+{
+  log_debug("crash_test_2");
+  return 0;
+}
+int32_t (*sceCoredumpRegisterCoredumpHandler)(
+	int32_t (*handler)(void *),
+	size_t stackSize,
+	void *pCommon
+)= NULL;
+void debugNetPrintf(int level, char* format, ...) {
 
+}
+unsigned char * orbisNfsGetFileContent(const char *filename){
+    log_info("fake orbisNfsGetFileContent called()\n");
+    return NULL;
+}
 OrbisGlConfig* GlConf;
 OrbisPadConfig *confPad;
-bool flag=true;
+bool flag=false;
 
 int    selected_icon;
 double dt, u_t = 0;
 struct timeval  t1, t2;
+const char *launch_query = NULL;
 
 #define DELTA  (123) // dpad delta movement
 
 int* (*crash_test)();
 static int (*jailbreak_me)(void) = NULL;
-static int (*rejail_multi)(void) = NULL;
 
 void updateController()
 {
@@ -55,31 +71,27 @@ void updateController()
             orbisPadSetCurrentButtonsPressed(buttons);
         }
 
-        if(orbisPadGetButtonPressed(ORBISPAD_UP)//) || orbisPadGetButtonHold(ORBISPAD_UP))
-        || confPad->padDataCurrent->ly < (127 - DELTA))
+        if(orbisPadGetButtonPressed(ORBISPAD_UP))
         {
             
             log_info( "Up pressed");
             GLES2_scene_on_pressed_button(111);
         }
         else
-        if(orbisPadGetButtonPressed(ORBISPAD_DOWN)// || orbisPadGetButtonHold(ORBISPAD_DOWN))
-        || confPad->padDataCurrent->ly > (127 + DELTA))
+        if(orbisPadGetButtonPressed(ORBISPAD_DOWN))
         {
             log_info( "Down pressed");
 
             GLES2_scene_on_pressed_button(116);
         }
         else
-        if(orbisPadGetButtonPressed(ORBISPAD_RIGHT)// || orbisPadGetButtonHold(ORBISPAD_RIGHT))
-        || confPad->padDataCurrent->lx > (127 + DELTA))
+        if(orbisPadGetButtonPressed(ORBISPAD_RIGHT))
         {
             log_info( "Right pressed");
             GLES2_scene_on_pressed_button(114);
         }
         else
-        if(orbisPadGetButtonPressed(ORBISPAD_LEFT)// || orbisPadGetButtonHold(ORBISPAD_LEFT))
-        || confPad->padDataCurrent->lx < (127 - DELTA))
+        if(orbisPadGetButtonPressed(ORBISPAD_LEFT))
         {
             log_info( "Left pressed");
             GLES2_scene_on_pressed_button(113);
@@ -117,7 +129,14 @@ void updateController()
         }
         if(orbisPadGetButtonPressed(ORBISPAD_L2))
         {
+
             log_info( "L2 pressed");
+            int libcmi = sceKernelLoadStartModule("/system/common/lib/libkernel_sys.sprx", 0, NULL, 0, 0, 0);
+            sceKernelDlsym(libcmi, "sceCoredumpRegisterCoredumpHandler", (void**)&sceCoredumpRegisterCoredumpHandler);
+            if(sceCoredumpRegisterCoredumpHandler)
+               sceCoredumpRegisterCoredumpHandler(crash_test_2, 16384, NULL);
+            else
+               log_info("sceCoredumpRegisterCoredumpHandler not found");
         }
         if(orbisPadGetButtonPressed(ORBISPAD_R1))
         {
@@ -139,7 +158,6 @@ void updateController()
 void finishApp()
 {
     orbisPadFinish();
-    orbisNfsFinish();
 }
 
 static bool initAppGl()
@@ -212,56 +230,32 @@ int main(int argc, char* argv[])
 #else
 
     /* load custom .prx, resolve and call a function */
-
-
-    sys_dynlib_load_prx("/app0/Media/jb.prx", &libcmi);
-    ret = sys_dynlib_dlsym(libcmi, "jailbreak_me", &jailbreak_me);
-    if (!ret)
+    int libcmi = sceKernelLoadStartModule("/app0/Media/jb.prx", 0, NULL, 0, 0, 0);
+    ret = sceKernelDlsym(libcmi, "jailbreak_me", (void**)&jailbreak_me);
+    if (ret >= 0)
     {
-       // if (!sys_dynlib_dlsym(libcmi, "rejail_multi", &rejail_multi))
-           // log_info("rejail_multi resolved from PRX");
-
-
         log_info("jailbreak_me resolved from PRX");
-
         if ((ret = jailbreak_me() != 0)) goto error;
-
-        
     }
     else
         goto error;
 
-
-  
     
     if (initGL_for_the_store(false, -1) == INIT_FAILED) goto error;
     
-
-
-
 #endif
-
+    if(argv[1] != NULL){
+       launch_query = argv[1];
+       log_info("Launched With Request: \"%s\"", launch_query);
+    }
 
     // init some libraries
     flag = initApp();
-
-    ret = sceSysmoduleLoadModule(0x009A);  // internal FreeType, libSceFreeTypeOl
-
-    // more test
-    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_NETCTL);
-    log_info("%s SCE_SYSMODULE_INTERNAL_NETCTL: 0x%08X", __FUNCTION__, ret);
-
-    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_HTTP);
-    log_info("%s SCE_SYSMODULE_INTERNAL_HTTP: 0x%08X", __FUNCTION__, ret);
-
-    ret = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_SSL);
-    log_info("%s SCE_SYSMODULE_INTERNAL_SSL: 0x%08X", __FUNCTION__, ret);
 
     // feedback
     log_info("Here we are!");
 
     /* init GLES2 stuff */
-
     // demo-font.c init
     es2init_text(ATTR_ORBISGL_WIDTH, ATTR_ORBISGL_HEIGHT);
     // ES_UI
@@ -272,20 +266,16 @@ int main(int argc, char* argv[])
     gettimeofday(&t1, NULL);
     t2 = t1;
 
-
-
-
-
     /// enter main render loop
     while (flag)
     {
         //skip the first frame 
         //so theres no race between 
         //the countroller update func and the GLES UI
-        if (frame != 1)
-            updateController();
+        if (frame != 1) updateController();
 
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
             ret = glGetError();
             if (ret) {
                 log_info("[ORBIS_GL] glClear failed: 0x%08X", ret);
@@ -294,24 +284,25 @@ int main(int argc, char* argv[])
 
 
             // ES_UI
-            GLES2_scene_render();
+           GLES2_scene_render(launch_query);
 
-            /// get timing, fps
-           if (!(frame % WEN))
+            if (!(frame % WEN))
             {
-                //StoreCore funcs
-                unsigned int now = get_time_ms();
-                log_info("--------------------------------------------");
-                log_info("[StoreCore][FPS] frame: %d, took: %ums, fps: %.3f", frame, now - time_ms, ((double)WEN / (double)(now - time_ms) * 1000.f));
-
+                //ItemzCore funcs
+                double const_1000 = 1000.0f;
+                uint64_t now = get_time_ms();
+                uint64_t frame_time = now - time_ms;
+                double time_to_draw = frame_time / const_1000;
+                double framerate = const_1000 / time_to_draw;
+                log_info("--------------------------------------------------");
+                log_info("[Render] time: %lums FPS: %.3lf", frame_time, framerate);
                 print_memory();
-                log_info("--------------------------------------------");
-
-
+                //reset Frame so we dont overflow later in release
+                frame = 1;
+                log_info("---------------------------------------------------");
                 time_ms = now;
             }
             frame++;
-            
 
             if (1) // update for the GLES uniform time
             {
@@ -339,8 +330,6 @@ error:
     // destructors
     ORBIS_RenderFillRects_fini();
     on_GLES2_Final();
-    pixelshader_fini();
-    finishOrbisLinkApp();
 
     exit(EXIT_SUCCESS);
 }

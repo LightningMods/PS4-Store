@@ -13,66 +13,43 @@
 #if defined (USE_NFS)
 #include <orbisNfs.h>
 #endif
-// reuse this type to index texts around!
-/// for icons.c, sprite.c
-#define NUM_OF_TEXTURES  (8)
-#define NUM_OF_SPRITES   (6)
-/// from GLES2_rects.c
-enum SH_type
-{
-    USE_COLOR,
-    USE_UTIME,
-    CUSTOM_BADGE,
-    NUM_OF_PROGRAMS
-};
 
 // common
-
-#include "GLES2_common.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
+#include <stdio.h>
+#include <string.h>
 #include <stdbool.h>
-#include <utils.h>
 #include <unistd.h>
+#include <fcntl.h> //O_CEAT
 #include <stdarg.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <math.h>
 #include <time.h>
-#include "log.h"
-#include <user_mem.h> 
 #include "lang.h"
-#include "dialog.h"
 
+#ifdef __ORBIS__
 #include "md5.h"
-#include <libSceSysmodule.h>
-#include <dialog.h>
-#include <libkernel.h>
+#include <orbisPad.h>
 #include <orbis/libkernel.h>
-#include <orbislink.h>
-#include <sys/mman.h>
-#include <user_mem.h> 
-#include <stdio.h>
-#include <string.h>
+#include <orbis/Sysmodule.h>
 #include "dialog.h"
-#include <sys/_types.h>
-#include <sys/fcntl.h> //O_CEAT
-#include <user_mem.h> 
-
+#endif
 
 enum Settings_options
 {
     CDN_SETTING,
-    TMP__SETTING,
-    HOME_MENU_SETTING,
+    TMP_SETTING,
+    REFRESH_DB_SETTING,
     INI_SETTING,
-    FNT__SETTING,
-    STORE_USB_SETTING,
+    FNT_SETTING,
+    AUTO_INSTALL_SETTING,
     CLEAR_CACHE_SETTING,
-    SHOW_INSTALL_PROG,
-    USE_PIXELSHADER_SETTING,
+    LEGACY_INSTALL_PROG,
+    RESET_SETTING,
     SAVE_SETTINGS,
     NUM_OF_SETTINGS
 };
@@ -91,7 +68,7 @@ enum Settings_options
 #define IS_INTERNAL 0
 
 
-int pingtest(int libnetMemId, int libhttpCtxId, const char* src);
+
 int32_t netInit(void);
 #define DIFFERENT_HASH true
 #define SAME_HASH false
@@ -106,7 +83,7 @@ int32_t netInit(void);
 #define SSL_HEAP_SIZE	(304 * 1024)
 #define HTTP_HEAP_SIZE	MB(5)
 #define NET_HEAP_SIZE   MB(5)
-#define TEST_USER_AGENT	"StoreHAX/GL"
+#define USER_AGENT	"StoreHAX/GL"
 
 #define SCE_SYSMODULE_INTERNAL_SYS_CORE 0x80000004
 #define SCE_SYSMODULE_INTERNAL_NETCTL 0x80000009
@@ -124,7 +101,7 @@ int32_t netInit(void);
 
 
 #define VERSION_MAJOR 2
-#define VERSION_MINOR 03
+#define VERSION_MINOR 04
 
 #define BUILD_YEAR_CH0 (__DATE__[ 7])
 #define BUILD_YEAR_CH1 (__DATE__[ 8])
@@ -223,6 +200,69 @@ int32_t netInit(void);
     (VERSION_MINOR + '0')
 #endif
 
+#define STRINGIFY(x) #x
+#define STRINGIFY_DEEP(x) STRINGIFY(x)
+
+#define UNUSED(x) (void)(x)
+
+#if 1
+#	define EPRINTF(msg, ...) printf("Error at %s:%s(%d): " msg, __FILE__, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#else
+#	define EPRINTF(msg, ...)
+#endif
+
+#define SWAP16(x) \
+	((uint16_t)( \
+		(((uint16_t)(x) & UINT16_C(0x00FF)) << 8) | \
+		(((uint16_t)(x) & UINT16_C(0xFF00)) >> 8) \
+	))
+
+#define SWAP32(x) \
+	((uint32_t)( \
+		(((uint32_t)(x) & UINT32_C(0x000000FF)) << 24) | \
+		(((uint32_t)(x) & UINT32_C(0x0000FF00)) <<  8) | \
+		(((uint32_t)(x) & UINT32_C(0x00FF0000)) >>  8) | \
+		(((uint32_t)(x) & UINT32_C(0xFF000000)) >> 24) \
+	))
+
+#define SWAP64(x) \
+	((uint64_t)( \
+		(uint64_t)(((uint64_t)(x) & UINT64_C(0x00000000000000FF)) << 56) | \
+		(uint64_t)(((uint64_t)(x) & UINT64_C(0x000000000000FF00)) << 40) | \
+		(uint64_t)(((uint64_t)(x) & UINT64_C(0x0000000000FF0000)) << 24) | \
+		(uint64_t)(((uint64_t)(x) & UINT64_C(0x00000000FF000000)) <<  8) | \
+		(uint64_t)(((uint64_t)(x) & UINT64_C(0x000000FF00000000)) >>  8) | \
+		(uint64_t)(((uint64_t)(x) & UINT64_C(0x0000FF0000000000)) >> 24) | \
+		(uint64_t)(((uint64_t)(x) & UINT64_C(0x00FF000000000000)) >> 40) | \
+		(uint64_t)(((uint64_t)(x) & UINT64_C(0xFF00000000000000)) >> 56) \
+	))
+
+#define LE16(x) (x)
+#define LE32(x) (x)
+#define LE64(x) (x)
+
+#define BE16(x) SWAP16(x)
+#define BE32(x) SWAP32(x)
+#define BE64(x) SWAP64(x)
+
+#ifndef MIN
+#	define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#endif
+#ifndef MAX
+#	define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#endif
+
+
+#define TYPE_CHECK_SIZE(name, size) \
+	_Static_assert(sizeof(name) == (size), "Size of " #name " != " #size)
+
+#define TYPE_CHECK_FIELD_OFFSET(name, member, offset) \
+	_Static_assert(offsetof(name, member) == (offset), "Offset of " #name "." #member " != " #offset)
+
+#define TYPE_CHECK_FIELD_SIZE(name, member, size) \
+	_Static_assert(sizeof(((name*)0)->member) == (size), "Size of " #name "." #member " != " #size)
+
+
 #define SCE_LNC_ERROR_APP_NOT_FOUND 0x80940031 // Usually happens if you to launch an app not in app.db
 #define SCE_LNC_UTIL_ERROR_ALREADY_INITIALIZED 0x80940018
 #define SCE_LNC_UTIL_ERROR_ALREADY_RUNNING 0x8094000c
@@ -256,14 +296,10 @@ int32_t netInit(void);
 #define SCE_SYSCORE_ERROR_LNC_INVALID_STATE 0x80aa000a
 #define SCE_LNC_UTIL_ERROR_NOT_INITIALIZED 0x80940001
 #define ORBIS_KERNEL_EAGAIN 0x80020023
-
-#define APP_HOME_DATA_FOLDER "/user/app/NPXS29998"
-#define APP_HOME_DATA_TID "NPXS29998"
 #define STORE_TID "NPXS39041"
 #define GL_CHECK(stmt) if(glGetError() != GL_NO_ERROR) msgok(FATAL, "GL_STATEMENT %s: %x", getLangSTR(FAILED_W_CODE),glGetError());
 #define PS4_OK 0
 #define INIT_FAILED -1
-#define DEBUG_SETTINGS_TID "NPXS20993"
 /// from fileIO.c
 unsigned char *orbisFileGetFileContent( const char *filename );
 extern size_t _orbisFile_lastopenFile_size;
@@ -274,29 +310,16 @@ int  thread_find_by_status (int req_idx, int req_status);
 int  thread_count_by_status(int req_status);
 int  thread_dispatch_index(void);
 
-uint8_t pkginstall(const char* path, unsigned long int size, bool Show_install_prog);
+#if defined(__ORBIS__)
+#define asset_path(x) "/mnt/sandbox/pfsmnt/"STORE_TID "-app0/assets/"x
+#define APP_PATH(x) "/user/app/NPXS39041/"x
+typedef struct OrbisGlobalConf
+{
+	OrbisPadConfig *confPad;
+	int orbisLinkFlag;
+}OrbisGlobalConf;
+#else // on linux
 
-
-/// from GLES2_badges
-int  scan_for_badges(layout_t *l, item_t *apps);
-void GLES2_Init_badge(void);
-void GLES2_Render_badge(int idx, vec4 *rect);
-
-/// GLES2_filemamager
-void fw_action_to_fm(int button);
-void GLES2_render_filemanager(int unused);
-
-void GLES2_render_queue(layout_t *l, int used);
-
-//void X_action_dispatch(int action, layout_t *l);
-
-// test fts.c and cp()
-int main_cp(int argc, char *argv[]);
-
-
-void GLES2_render_menu(int unused);
-
-// UI panels new way, v3
-vec4 get_rect_from_index(const int idx, const layout_t *l, vec4 *io);
-void buffer_to_off(item_t * ret, int index_t, char* str);
-
+#define APP_PATH(x) "./app_path/"x
+#define asset_path(x) "./assets/"x
+#endif

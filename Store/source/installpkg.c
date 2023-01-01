@@ -1,11 +1,11 @@
 #include "utils.h"
 #include <stdarg.h>
-#include <user_mem.h> 
 #include <installpkg.h>
 #include <stdbool.h>
-
+#include <orbis/AppInstUtil.h>
 #include "defines.h"
-
+#include <pthread.h> 
+extern char* download_panel_text[];
 int PKG_ERROR(const char* name, int ret)
 {
     msgok(WARNING, "%s\nHEX: %x Int: %i\nfrom Function %s",getLangSTR(INSTALL_FAILED), ret, ret, name);
@@ -20,46 +20,16 @@ int PKG_ERROR(const char* name, int ret)
 
 #define BGFT_HEAP_SIZE (1 * 1024 * 1024)
 
-extern sceAppInst_done;
+extern bool sceAppInst_done;
 static bool   s_bgft_initialized = false;
 static struct bgft_init_params  s_bgft_init_params;
 
-bool app_inst_util_init(void) {
-    int ret;
-
-    if (sceAppInst_done) {
-        goto done;
-    }
-
-    ret = sceAppInstUtilInitialize();
-    if (ret) {
-        log_debug( "sceAppInstUtilInitialize failed: 0x%08X", ret);
-        goto err;
-    }
-
-    sceAppInst_done = true;
-
-done:
-    return true;
-
-err:
-    sceAppInst_done = false;
-
-    return false;
-}
-
 void app_inst_util_fini(void) {
-    int ret;
-
     if (!sceAppInst_done) {
         return;
     }
 
-    ret = sceAppInstUtilTerminate();
-    if (ret) {
-        log_debug( "sceAppInstUtilTerminate failed: 0x%08X", ret);
-    }
-
+    sceAppInstUtilTerminate();
     sceAppInst_done = false;
 }
 
@@ -128,40 +98,7 @@ void bgft_fini(void) {
     s_bgft_initialized = false;
 }
 
-bool bgft_download_get_task_progress(int task_id, struct bgft_download_task_progress_info* progress_info) {
-    SceBgftTaskProgress tmp_progress_info;
-
-    if (!s_bgft_initialized || task_id < 0 || !progress_info) {
-        PKG_ERROR("bgft_download_get_task_progress INIT", 0x1337);
-        return false;
-    }
-
-
-    memset(&tmp_progress_info, 0, sizeof(tmp_progress_info));
-    int ret = sceBgftServiceDownloadGetProgress(task_id, &tmp_progress_info);
-    if (ret) {
-        PKG_ERROR("sceBgftDownloadGetProgress", ret);
-        return false;
-    }
-
-    memset(progress_info, 0, sizeof(*progress_info));
-    {
-        progress_info->bits = tmp_progress_info.bits;
-        progress_info->error_result = tmp_progress_info.errorResult;
-        progress_info->length = tmp_progress_info.length;
-        progress_info->transferred = tmp_progress_info.transferred;
-        progress_info->length_total = tmp_progress_info.lengthTotal;
-        progress_info->transferred_total = tmp_progress_info.transferredTotal;
-        progress_info->num_index = tmp_progress_info.numIndex;
-        progress_info->num_total = tmp_progress_info.numTotal;
-        progress_info->rest_sec = tmp_progress_info.restSec;
-        progress_info->rest_sec_total = tmp_progress_info.restSecTotal;
-        progress_info->preparing_percent = tmp_progress_info.preparingPercent;
-        progress_info->local_copy_percent = tmp_progress_info.localCopyPercent;
-    }
-
-    return true;
-}
+int sceAppInstUtilAppExists(const char* tid, int* flag);
 
 bool app_inst_util_is_exists(const char* title_id, bool* exists) {
     int flag;
@@ -193,86 +130,114 @@ bool app_inst_util_is_exists(const char* title_id, bool* exists) {
    for next install */
 extern bool Download_icons;
 
+bool pkg_is_patch(const char* src_dest) {
+
+    // Read PKG header
+    struct pkg_header hdr;
+    static const uint8_t magic[] = { '\x7F', 'C', 'N', 'T' };
+    // Open path
+    int pkg = sceKernelOpen(src_dest, O_RDONLY, 0);
+    if (pkg < 0) return false;
+
+    sceKernelLseek(pkg, 0, SEEK_SET);
+    sceKernelRead(pkg, &hdr, sizeof(struct pkg_header));
+
+    sceKernelClose(pkg);
+
+    if (memcmp(hdr.magic, magic, sizeof(magic)) != 0) {
+        log_error("PKG Format is wrong");
+        return false;
+    }
+
+    unsigned int flags = BE32(hdr.content_flags);
+
+    if (flags & PKG_CONTENT_FLAGS_FIRST_PATCH || flags & PKG_CONTENT_FLAGS_SUBSEQUENT_PATCH || 
+        flags & PKG_CONTENT_FLAGS_DELTA_PATCH || flags & PKG_CONTENT_FLAGS_CUMULATIVE_PATCH) 
+    {
+        return true;
+    }
+
+    return false;
+}
+
 void *install_prog(void* argument)
 {
     struct install_args* args = argument;
-    struct bgft_download_task_progress_info progress_info;
+    SceBgftTaskProgress progress_info;
+    bool is_threaded = args->is_thread;
 
-    if (!args->is_thread)
-       progstart("Store Installation on Going\n\nInstalling: %s\nTask: ID 0x%08X", args->title_id, args->task_id);
-   else
-       printf("Starting PKG Install\n");
-    
-    int prog = 0;
-    while (prog != 100)
+    log_info("Starting PKG Install");
+    args->l->progress = 0.;
+    args->l->status = INSTALLING_APP;
+    // trigger refresh of Queue active count
+    left_panel2->vbo_s = ASK_REFRESH;
+
+    while (args->l->progress < 99)
     {
-        bgft_download_get_task_progress(args->task_id, &progress_info);
-        if (IS_ERROR(progress_info.error_result)) {
+        memset(&progress_info, 0, sizeof(progress_info));
 
-            if (!args->is_thread)
-              return PKG_ERROR("BGFT_ERROR", progress_info.error_result);
-            else
-            {
-                log_error("BGFT_ERROR error: %x", progress_info.error_result);
-                return NULL;
-            }
-
+        int ret = sceBgftServiceDownloadGetProgress(args->task_id, &progress_info);
+        if (ret) {
+          // PKG_ERROR("sceBgftDownloadGetProgress", ret);
+           args->l->progress = 0.;
+           args->l->status = ret;
+           goto clean;
         }
 
-     prog = (uint32_t)(((float)progress_info.transferred / args->size) * 100.f);
+        if (progress_info.transferred > 0 && progress_info.error_result != 0) {
+             args->l->progress = 0.;
+             args->l->status = progress_info.error_result;
+             goto clean;
+        }
+
+        args->l->progress = (uint32_t)(((float)progress_info.transferred / progress_info.length) * 100.f);
 
 
-     if (!args->is_thread) 
-         ProgSetMessagewText(prog, "Store Installation on Going\n\nInstalling: %s\nTask: ID 0x%08X\n\nDont worry queued Downloads are still downloading in the background", args->title_id, args->task_id);
-
-     if (progress_info.transferred % (4096 * 128) == 0)
-         log_debug("%s, Install_Thread: reading data, %lub / %lub (%%%i)", __FUNCTION__, progress_info.transferred, args->size, prog);
+        if (progress_info.transferred % (4096 * 128) == 0)
+             log_debug("%s, Install_Thread: reading data, %lub / %lub (%%%lf) ERR: %i", __FUNCTION__, progress_info.transferred, progress_info.length,  args->l->progress, progress_info.error_result);
 
     }
 
-    if (prog == 100 && !IS_ERROR(progress_info.error_result)) {
-        if (!args->is_thread) {
-            sceMsgDialogTerminate();
-            msgok(NORMAL, "%s %s %s", getLangSTR(INSTALL_OF),args->title_id,getLangSTR(COMPLETE_WO_ERRORS));
-        }
-    }
-    else {
-        if (!args->is_thread) {
-            sceMsgDialogTerminate();
-            msgok(WARNING, "%s %s %s 0x%x", getLangSTR(INSTALL_OF),args->title_id, getLangSTR(INSTALL_FAILED),progress_info.error_result);
-        }
-        else
+    if (progress_info.error_result != 0) {
+            args->l->progress = 0.;
+            args->l->status = progress_info.error_result;
             log_error("Installation of %s has failed with code 0x%x", args->title_id, progress_info.error_result);
-
     }
-
-    log_info("Deleting PKG %s...", args->path);
-    unlink(args->path);
+    else
+       args->l->status = READY;
+    
+clean:
     log_info("Finalizing Memory...");
+    log_info("Deleting PKG %s...", args->path);
+    if(icon_panel && icon_panel->item_d[args->l->g_idx].token_d[ID].off != NULL){ // reset gaame update status to latest status
+       icon_panel->item_d[args->l->g_idx].interuptable = false;
+       icon_panel->item_d[args->l->g_idx].update_status = NO_UPDATE;
+       download_panel->item_d[0].token_d[0].off =  download_panel_text[0] = (char*)getLangSTR(REINSTALL_APP);
+    }
+    args->l->g_idx = -1;
+    unlink(args->path);
     free(args->title_id);
     free(args->path);
     free(args);
 
-    if (!args->is_thread) {
-        if (!Download_icons)
-            refresh_apps_for_cf(SORT_NA);
-        else
-            log_warn("CF NOT YET INIT");
+    // trigger refresh of Queue active count
+    left_panel2->vbo_s = ASK_REFRESH;
+    log_info("Set Status: Ready");
 
-        return NULL;
-    }
-   else
-      pthread_exit(NULL);
+    if(is_threaded)
+       pthread_exit(NULL);
+
+    return NULL;
 }
 
-uint8_t pkginstall(const char *path, unsigned long int size, bool Show_install_prog)
+uint32_t pkginstall(const char *fullpath, dl_arg_t* ta, bool Auto_install)
 {
     char title_id[16];
     int  is_app, ret = -1;
     int  task_id = -1;
     char buffer[255];
 
-    if( if_exists(path) )
+    if( if_exists(fullpath) )
     {
       if (sceAppInst_done) {
           log_info("Initializing AppInstUtil...");
@@ -286,9 +251,10 @@ uint8_t pkginstall(const char *path, unsigned long int size, bool Show_install_p
             return PKG_ERROR("BGFT_initialization", ret);
         }
 
-        ret = sceAppInstUtilGetTitleIdFromPkg(path, title_id, &is_app);
+        ret = sceAppInstUtilGetTitleIdFromPkg(fullpath, title_id, &is_app);
         if (ret) 
             return PKG_ERROR("sceAppInstUtilGetTitleIdFromPkg", ret);
+
 
         snprintf(buffer, 254, "%s via Store", title_id);
         log_info( "%s", buffer);
@@ -296,27 +262,29 @@ uint8_t pkginstall(const char *path, unsigned long int size, bool Show_install_p
         memset(&download_params, 0, sizeof(download_params));
         download_params.param.entitlement_type = 5;
         download_params.param.id = "";
-        download_params.param.content_url = path;
+        download_params.param.content_url = fullpath;
         download_params.param.content_name = buffer;
         download_params.param.icon_path = "/update/fakepic.png";
         download_params.param.playgo_scenario_id = "0";
-        download_params.param.option = BGFT_TASK_OPTION_DELETE_AFTER_UPLOAD;
+        download_params.param.option = BGFT_TASK_OPTION_INVISIBLE;
+
         download_params.slot = 0;
 
     retry:
-       log_info("%s 1", __FUNCTION__);
+        log_info("%s 1", __FUNCTION__);
         ret = sceBgftServiceIntDownloadRegisterTaskByStorageEx(&download_params, &task_id);
-        if(ret == 0x80990088)
+        if(ret == 0x80990088 || ret == 0x80990015)
         {
             ret = sceAppInstUtilAppUnInstall(&title_id[0]);
             if(ret != 0)
-                return PKG_ERROR("sceAppInstUtilAppUnInstall", ret);
+               return PKG_ERROR("sceAppInstUtilAppUnInstall", ret);
 
             goto retry;
+
         }
-        else
-        if(ret) 
+        else if(ret) 
             return PKG_ERROR("sceBgftServiceIntDownloadRegisterTaskByStorageEx", ret);
+        
 
         log_info("Task ID(s): 0x%08X", task_id);
 
@@ -331,22 +299,43 @@ uint8_t pkginstall(const char *path, unsigned long int size, bool Show_install_p
     struct install_args* args = (struct install_args*)malloc(sizeof(struct install_args));
     args->title_id = strdup(title_id);
     args->task_id = task_id;
-    args->size = size;
-    args->path = strdup(path);
-    args->is_thread = !Show_install_prog;
+    args->l = ta;
+    args->path = strdup(fullpath);
+    args->is_thread = !Auto_install;
+    args->delete_pkg = true; //STORE DOWNLOADS ONLY
 
-    if (Show_install_prog){
+     //Both Auto install and Show install progress will set status to INSTALL_APP
+    if (Auto_install){ //Auto Install (is being called by the download thread)
         install_prog((void*)args);
     }
-    else {
+    else if (get->Legacy_Install){ //is "Show Install Progess" enabled, if so make a thread
         pthread_t thread = 0;
         ret = pthread_create(&thread, NULL, install_prog, (void*)args);
         log_debug("pthread_create for %x, ret:%d", task_id, ret);
+    }
+    else { // Default, Auto install and Show install progress are disabled
+          //  so we let the PS4 INSTALL it in the Background, 
+        ret = sceBgftServiceDownloadStartTask(args->task_id);
+        if (ret) {
+            return PKG_ERROR("sceBgftServiceDownloadStartTask", ret);
+        }
+        else { // too bad we cant delete the file with this option
+            if(icon_panel && icon_panel->item_d[args->l->g_idx].token_d[ID].off  != NULL){
+               icon_panel->item_d[ta->g_idx].interuptable = false;
+               icon_panel->item_d[ta->g_idx].update_status = NO_UPDATE;
+               download_panel->item_d[0].token_d[0].off =  download_panel_text[0] = (char*)getLangSTR(REINSTALL_APP);
+            }
+            ta->g_idx = -1;
+            ta->status = READY;
+            layout_refresh_VBOs();
 
-        return 0;
+            log_info("package successfully started in the background");
+        }
+
     }
 
-    log_info( "%s(%s), %s done.", __FUNCTION__, path, title_id);
+    log_info( "%s(%s) done.", __FUNCTION__, fullpath);
+    if(ta->dst) free((void*)ta->dst), ta->dst = NULL;
 
     return 0;
 }

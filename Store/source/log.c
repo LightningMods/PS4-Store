@@ -49,8 +49,6 @@ static const char* level_colors[] = {
 };
 #endif
 
-#define __ORBIS__ 1
-
 #ifdef __ORBIS__
 #define DGB_CHANNEL_TTYL 0
 int sceKernelDebugOutText(int DBG_CHANNEL, const char *text);
@@ -59,20 +57,19 @@ int sceKernelDebugOutText(int DBG_CHANNEL, const char *text);
 static void stdout_callback(log_Event* ev) {
     char  buf[16];
     char format_buf[400];
-    char *print_buf[400];
+    char print_buf[400];
     buf[strftime(buf, sizeof(buf), "%H:%M:%S", ev->time)] = '\0';
 
-    vsnprintf(format_buf, 399, ev->fmt, ev->ap);
+    vsnprintf(&format_buf[0], 399, ev->fmt, ev->ap);
 
-    snprintf(print_buf, 399, "%s %-5s %s:%d: %s\n", buf, level_strings[ev->level], ev->file, ev->line, format_buf);
+    snprintf(&print_buf[0], 399, "%s %-5s %s:%d: [STORE] %s\n", buf, level_strings[ev->level], ev->file, ev->line, format_buf);
 
 #ifdef __ORBIS__
-    sceKernelDebugOutText(DGB_CHANNEL_TTYL, print_buf);
+    sceKernelDebugOutText(DGB_CHANNEL_TTYL, &print_buf[0]);
 #else
-    log_info("%s\n" print_buf);
+    printf("%s\n" &print_buf[0]);
 #endif
 }
-
 
 static void file_callback(log_Event* ev) {
     char buf[64];

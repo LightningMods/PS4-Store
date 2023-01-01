@@ -10,21 +10,19 @@
 
 #include <stdio.h>
 #include <string.h>
-
-
-#if defined(__ORBIS__)
-    #include <debugnet.h>
-#endif
+#include <stdatomic.h>
+#include <utils.h>
 
 #include "defines.h"
 #include "shaders.h"
 #include "GLES2_common.h"
-
+#include "utils.h"
 
 extern char* group_label[8];
 extern vec2 resolution;
+extern bool unsafe_source;
 
-static char* group_labels[] =
+static const char* group_labels[] =
 {   // 0 is reserved index for: (label, total count)
     "HB Game",
     "Emulator",
@@ -35,6 +33,18 @@ static char* group_labels[] =
     "Other"
 };
 
+const char* group_labels_non_pkg_zone[] =
+{   // 0 is reserved index for: (label, total count)
+    "Game",
+    "Patch",
+    "DLC",
+    "Theme",
+    "App",
+    "Unknown",
+    "Other"
+};
+
+extern atomic_bool is_icons_finished, icons_thread_started;
 
 // check for pattern in whitelist patterns, if there take count, if not fall in Other
 
@@ -69,7 +79,7 @@ static int check_for_token(char *pattern, item_t *item, int count)
 item_t* analyze_item_t_v2(item_t* items, int item_count)
 {
     // same number of group_labels, +1 for reserved main index
-    int  i, count = sizeof(group_labels) / sizeof(group_labels[0]) + 1;
+    int  i, count = sizeof(group_labels_non_pkg_zone) / sizeof(group_labels_non_pkg_zone[0]) + 1;
     // dynalloc
     item_t* ret = calloc(count, sizeof(item_t));
     item_idx_t* t = NULL;
@@ -86,7 +96,7 @@ item_t* analyze_item_t_v2(item_t* items, int item_count)
         t = &ret[i].token_d[0];
         ret[i].token_c = 0;
         // address the label
-        t->off = group_labels[i - 1];
+        t->off =  unsafe_source ? (char*)group_labels_non_pkg_zone[i - 1] : (char*)group_labels[i - 1];
         t->len = 0;
     }
     // reserved index (0)!
@@ -276,11 +286,17 @@ double dfp_hdd  = -1.,
        dfp_fmem = -1.;
 
 static bool refresh_clk = true;
-
+extern atomic_bool refresh_icons;
 /* upper right sytem_info, updates
    internally each 'clk.z' seconds */
+int sceKernelGetCpuTemperature(uint32_t *temp);
 void GLES2_Draw_sysinfo(void)
-{   // update time
+{   
+    
+    char usb[255];
+    unsigned int usb_numb = usbpath();
+    sprintf(&usb[0], "/mnt/usb%d/", usb_numb);
+    // update time
     clk.x += u_t - clk.y;
     clk.y  = u_t;
     // time limit passed!
@@ -315,14 +331,13 @@ void GLES2_Draw_sysinfo(void)
         // fill the vbo
         add_text( t_vbo, sub_font, &tmp[0], &col, &pen);
 
-        uint32_t numb = -1;
-        size_t fmem = -1;
+        uint32_t numb = 70;
+        size_t fmem = 0;
+#if defined(__ORBIS__)
         sceKernelGetCpuTemperature(&numb);
-        if (numb > 140)
-            log_warn("PS4 Temp is above max");
-
-         sceKernelAvailableFlexibleMemorySize(&fmem);
-         snprintf(&tmp[0], 127, "%s: %x, %d°C, %zub", getLangSTR(SYS_VER),SysctlByName_get_sdk_version(), numb, fmem);
+        sceKernelAvailableFlexibleMemorySize(&fmem);
+#endif
+        snprintf(&tmp[0], 127, "%s: %x, %d°C, %zub", getLangSTR(SYS_VER),SysctlByName_get_sdk_version(), numb, fmem);
         // we need to know Text_Length_in_px in advance, so we call this:
         texture_font_load_glyphs( main_font, &tmp[0] ); 
         // we know 'tl' now, right align
@@ -340,23 +355,6 @@ void GLES2_Draw_sysinfo(void)
         pen.y -= 32;
         // fill the vbo
         add_text( t_vbo, main_font, &tmp[0], &c, &pen);
-        // eventually, skip dfp on some view...
-        if(menu_pos.z < ON_ITEMzFLOW)
-        {   /* text for disk_free stats */
-               pen = (vec2) { 26, 100 };
-            vec4 c = col * .75f;
-            //
-            if(strstr(usbpath(), "/mnt/usb"))
-            {   // get mountpoint stat info
-                dfp_ext = df(&tmp[0], "/mnt/usb0");
-                
-            } else
-                dfp_ext = 0;
-            // start upper
-            if(dfp_ext > 0) pen.y += 32;
-            // fill the vbo
-            add_text( t_vbo, sub_font, getLangSTR(STORAGE), &col, &pen);
-         }
 
         // eventually, skip dfp on some view...
         if(menu_pos.z < ON_ITEMzFLOW)
@@ -364,9 +362,9 @@ void GLES2_Draw_sysinfo(void)
                pen = (vec2) { 26, 100 };
             vec4 c = col * .75f;
             //
-            if(strstr(usbpath(), "/mnt/usb"))
+            if(usb_numb != -1)
             {   // get mountpoint stat info
-                dfp_ext = df(&tmp[0], "/mnt/usb0");
+                dfp_ext = df(&tmp[0], usb);
                 
             } else
                 dfp_ext = 0;
@@ -389,14 +387,17 @@ void GLES2_Draw_sysinfo(void)
             //if(dfp_hdd < 0)
             {  // get mountpoint stat info
                 dfp_hdd = df(&tmp[0], "/user");
-            }
+            } 
             add_text( t_vbo, main_font, &tmp[0], &c, &pen);
 
             // when not on cf
-            drop_some_icon0();
+            // dont race the icons thread
+            if (is_icons_finished && !icons_thread_started
+             && icon_panel->item_c > 150) {
+                log_info("dropping ...");
+                drop_some_icon0();
+            }
         }
-        else
-            drop_some_coverbox();
 
         // update FMEM
         dfp_fmem = (1. - (double)fmem / (double)0x8000000) * 100.;
@@ -447,7 +448,6 @@ void GLES2_Draw_common_texts(void)
 
     switch(menu_pos.z) // skip draw on those views
     {
-        case ON_ITEMzFLOW:
         case ON_INSTALL:
         case ON_QUEUE:
         case ON_ITEM_INFO:
@@ -471,7 +471,7 @@ void GLES2_Draw_common_texts(void)
         if( menu_pos.z == ON_MAIN_SCREEN
         || (menu_pos.z == ON_LEFT_PANEL && active_p->item_c > active_p->f_size) )
         {
-            snprintf(&tmp[0], 127, "Item %d/%d", active_p->curr_item +1,
+            snprintf(&tmp[0], 127, "%d/%d", active_p->curr_item +1,
                                            active_p->item_c);
             // can be more than one page?
             if(active_p->item_c > active_p->f_size)
@@ -481,7 +481,7 @@ void GLES2_Draw_common_texts(void)
                 ivec2 pi  = (ivec2) { active_p->curr_item, active_p->item_c };
                       pi /= (ivec2) ( active_p->fieldsize.x * active_p->fieldsize.y );
                       pi += 1;
-                      snprintf(&tmp[l], 127, ", Page %d/%d", pi.x, pi.y);
+                      snprintf(&tmp[l], 127, ", %s %d/%d", getLangSTR(PAGE2) ,pi.x, pi.y);
             }
             // we need to know Text_Length_in_px in advance, so we call this:
             texture_font_load_glyphs( sub_font, &tmp[0] ); 
