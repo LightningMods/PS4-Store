@@ -71,8 +71,6 @@ restart is required for changes made to the database (for now)
 - The Store's Langs. repo is [HERE](https://github.com/LightningMods/Store-Languages)
 - The Store uses the PS4's System software Lang setting
 
-settings.ini can do be loaded via USB
-
 ONLY 4 apps can download at once
 
 ## Official Discord server
