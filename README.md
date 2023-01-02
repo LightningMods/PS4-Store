@@ -19,7 +19,7 @@
 ## Libaries
 
 
-- [OrbisDev SDK](https://github.com/orbisdev/orbisdev) (MIT)
+- [OOSDK SDK](https://github.com/openorbis) 
 - [Orbis SQLite](https://github.com/orbisdev/orbisdev-libSQLite) (GPLv3)
 - [OOSDK for PRXs](https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain) (GPLv3)
 - [JSMN](https://github.com/zserge/jsmn) (MIT)
@@ -53,52 +53,25 @@ temppath=PATH_WHERE_TO_DOWNLOAD_THE_PKGS; Required
 StoreOnUSB=0 //store pkgs on usb OPTIONAL
 TTF_Font=/mnt/usb0/myfont.ttf // TTF Font the store will try to use (embedded font on fail)
 BETA_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxx //for Beta Builds (define)
-Home_Redirection=1 // Enables the Home Menu Redirect
-Daemon_on_start=0 // Disables the Daemon from auto starting with the app
 Show_install_prog=1 // Enables the Store PKG/APP install Progress
 Copy_INI=1 // Copies USB INI to the PS4s app dir.
-```
-
-## Daemon
-
-The Store daemon is installed when you open the app for the first time at `/system/vsh/app/ITEM00002`
-it gets Updated ONLY by the Store app auto
-
-The daemon settings file is ONLY for internal use by the Store devs
-however it also has a ini at `/system/vsh/app/ITEM00002/daemon.ini` with the following ini values
-
-```
-[Daemon]
-version=4098// Daemon version for Store, Official version is always > 0x1000
 ```
  
 ## App details
 
-upon booting up the app will cache all json files from the CDN in the settings.ini
-restart is required for changes made to json files (for now)
+upon booting up the app will cache the database from the CDN in the settings.ini
+restart is required for changes made to the database (for now)
 
 - all images from jsons download to `/user/app/NPXS39041/storedata/`
-- all game covers are cached at `/user/app/NPXS39041/covers`
-- all jsons are downloaded to `/user/app/NPXS39041/pages`
 - PKG Download folder `/user/app/NPXS39041/downloads` (download folder is cleared every app launch, not yet installed pkgs are there)
-- Store log is at `/user/app/NPXS39041/logs/log.txt`
-
-## Dumper details
-
-- Dumper log is at `/user/app/NPXS39041/logs/itemzflow.log`
-- Dumper WILL ONLY dump to the first USB it finds (most likely USB0)
-- Dumper will try to use the Languages as the Store
-- If the dumper gets stuck on a file make SURE **both** discs and **ALL** Languages are installed if available **BEFORE** Dumping
-- If your dump has failed then provide us the log `/user/app/NPXS39041/logs/itemzflow.log` in our discord below
+- Store log is at `/user/app/NPXS39041/logs/store.log`
 
 ## Languages
 
 - The Store's Langs. repo is [HERE](https://github.com/LightningMods/Store-Languages)
 - The Store uses the PS4's System software Lang setting
 
-
-
-IF the settings file is loaded from USB all settings will be saved to the same USB
+settings.ini can do be loaded via USB
 
 ONLY 4 apps can download at once
 
