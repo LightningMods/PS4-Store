@@ -49,7 +49,7 @@ void Exit_App_With_Message(int sig_numb)
         //try our best to make the name not always the same
         snprintf(&tmp[0], 99, "/mnt/usb%d/Store", usbpath());
         mkdir(&tmp[0], 0777);
-        snprintf(&tmp[0], 99, "%s/Store.log", &tmp[0]);
+        snprintf(&tmp[0], 99, "%s/store.log", &tmp[0]);
 
         if (touch_file(&tmp[0])) {
             log_debug("App crashed writing log to %s", &tmp[0]);

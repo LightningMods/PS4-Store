@@ -96,7 +96,7 @@ int initGL_for_the_store(bool reload_apps, int ref_pages)
     
     unlink(STORE_LOG);
     //old log
-    unlink("/user/app/NPXS39041/logs/log.txt");
+    unlink("/user/app/NPXS39041/logs/store.log");
     //Keep people from backing up the Sig file
     unlink("/user/app/NPXS39041/homebrew.elf.sig");
 
@@ -112,18 +112,6 @@ int initGL_for_the_store(bool reload_apps, int ref_pages)
     
     rmtree("/user/app/NPXS39041/downloads"); 
     mkdir("/user/app/NPXS39041/downloads", 0777);
-
-    
-    //USB LOGGING
-   /* if (strstr(usbpath(), "/mnt/usb"))
-    {
-        sprintf(&tmp[0], "%s/Store-log.txt", usbpath());
-        unlink(tmp);
-        fp = fopen(tmp, "w");
-        if(fp != NULL)
-        log_add_fp(fp, LOG_DEBUG);
-    }count_availables_json*/
-    /* -- END OF LOGINIT --*/
 
 
     log_info("------------------------ Store[GL] Compiled Time: %s @ %s  -------------------------", __DATE__, __TIME__);
@@ -168,12 +156,9 @@ int initGL_for_the_store(bool reload_apps, int ref_pages)
 
     globalConf.confPad = orbisPadGetConf();
 
-    //rif_exp("/user/license/freeIV0002-NPXS39041_00.rif");
-    mkdir(STORE_APP_PATH "covers", 0777);
     mkdir(STORE_APP_PATH "logs", 0777);
     mkdir(STORE_APP_PATH "storedata", 0777);
     mkdir(STORE_APP_PATH "downloads", 0777);
-    mkdir(STORE_APP_PATH "covers", 0777);
 
     if (!LoadOptions(get)) msgok(WARNING, (char*)getLangSTR(INI_ERROR));
 
