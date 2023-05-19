@@ -26,34 +26,16 @@
     <file targ_path="assets/load.png" orig_path="../App Media-Assets/assets/load.png" />
     <file targ_path="langs/0/lang.ini" orig_path="../App Media-Assets/langs/0/lang.ini" />
     <file targ_path="langs/1/lang.ini" orig_path="../App Media-Assets/langs/1/lang.ini" />
-    <file targ_path="langs/10/lang.ini" orig_path="../App Media-Assets/langs/10/lang.ini" />
-    <file targ_path="langs/11/lang.ini" orig_path="../App Media-Assets/langs/11/lang.ini" />
-    <file targ_path="langs/12/lang.ini" orig_path="../App Media-Assets/langs/12/lang.ini" />
-    <file targ_path="langs/13/lang.ini" orig_path="../App Media-Assets/langs/13/lang.ini" />
-    <file targ_path="langs/14/lang.ini" orig_path="../App Media-Assets/langs/14/lang.ini" />
-    <file targ_path="langs/15/lang.ini" orig_path="../App Media-Assets/langs/15/lang.ini" />
-    <file targ_path="langs/16/lang.ini" orig_path="../App Media-Assets/langs/16/lang.ini" />
-    <file targ_path="langs/17/lang.ini" orig_path="../App Media-Assets/langs/17/lang.ini" />
-    <file targ_path="langs/18/lang.ini" orig_path="../App Media-Assets/langs/18/lang.ini" />
-    <file targ_path="langs/19/lang.ini" orig_path="../App Media-Assets/langs/19/lang.ini" />
-    <file targ_path="langs/2/lang.ini" orig_path="../App Media-Assets/langs/2/lang.ini" />
-    <file targ_path="langs/20/lang.ini" orig_path="../App Media-Assets/langs/20/lang.ini" />
-    <file targ_path="langs/21/lang.ini" orig_path="../App Media-Assets/langs/21/lang.ini" />
-    <file targ_path="langs/22/lang.ini" orig_path="../App Media-Assets/langs/22/lang.ini" />
-    <file targ_path="langs/23/lang.ini" orig_path="../App Media-Assets/langs/23/lang.ini" />
-    <file targ_path="langs/24/lang.ini" orig_path="../App Media-Assets/langs/24/lang.ini" />
-    <file targ_path="langs/25/lang.ini" orig_path="../App Media-Assets/langs/25/lang.ini" />
-    <file targ_path="langs/26/lang.ini" orig_path="../App Media-Assets/langs/26/lang.ini" />
-    <file targ_path="langs/27/lang.ini" orig_path="../App Media-Assets/langs/27/lang.ini" />
-    <file targ_path="langs/28/lang.ini" orig_path="../App Media-Assets/langs/28/lang.ini" />
-    <file targ_path="langs/29/lang.ini" orig_path="../App Media-Assets/langs/29/lang.ini" />
     <file targ_path="langs/3/lang.ini" orig_path="../App Media-Assets/langs/3/lang.ini" />
     <file targ_path="langs/4/lang.ini" orig_path="../App Media-Assets/langs/4/lang.ini" />
     <file targ_path="langs/5/lang.ini" orig_path="../App Media-Assets/langs/5/lang.ini" />
-    <file targ_path="langs/6/lang.ini" orig_path="../App Media-Assets/langs/6/lang.ini" />
     <file targ_path="langs/7/lang.ini" orig_path="../App Media-Assets/langs/7/lang.ini" />
     <file targ_path="langs/8/lang.ini" orig_path="../App Media-Assets/langs/8/lang.ini" />
-    <file targ_path="langs/9/lang.ini" orig_path="../App Media-Assets/langs/9/lang.ini" />
+	<file targ_path="langs/12/lang.ini" orig_path="../App Media-Assets/langs/12/lang.ini" />
+    <file targ_path="langs/17/lang.ini" orig_path="../App Media-Assets/langs/17/lang.ini" />
+    <file targ_path="langs/19/lang.ini" orig_path="../App Media-Assets/langs/19/lang.ini" />
+	<file targ_path="langs/23/lang.ini" orig_path="../App Media-Assets/langs/23/lang.ini" />
+    <file targ_path="langs/26/lang.ini" orig_path="../App Media-Assets/langs/26/lang.ini" />
     <file targ_path="Media/jb.prx" orig_path="../App Media-Assets/Media/jb.prx" />
     <file targ_path="Media/rsa.pub" orig_path="../App Media-Assets/Media/rsa.pub" />
     <file targ_path="Media/rsa.prx" orig_path="../App Media-Assets/Media/rsa.sprx" />

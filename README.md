@@ -53,8 +53,10 @@ temppath=PATH_WHERE_TO_DOWNLOAD_THE_PKGS; Required
 StoreOnUSB=0 //store pkgs on usb OPTIONAL
 TTF_Font=/mnt/usb0/myfont.ttf // TTF Font the store will try to use (embedded font on fail)
 BETA_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxx //for Beta Builds (define)
-Show_install_prog=1 // Enables the Store PKG/APP install Progress
+Legacy_install_prog=1 // Enables the Store PKG/APP install Progress
 Copy_INI=1 // Copies USB INI to the PS4s app dir.
+auto_load_cache=0 //pre-load cached icons on startup
+auto_install=1 // auto install
 ```
  
 ## App details
@@ -65,6 +67,16 @@ restart is required for changes made to the database (for now)
 - all images from jsons download to `/user/app/NPXS39041/storedata/`
 - PKG Download folder `/user/app/NPXS39041/downloads` (download folder is cleared every app launch, not yet installed pkgs are there)
 - Store log is at `/user/app/NPXS39041/logs/store.log`
+
+## How does the Update section decide if a app has a update?
+
+| App Type          | MD5 Hash   | SFO version | No update check|
+|-------------------|------------|------------|------------|
+| Media             |            |            |     X       |
+| Other, DLC, Theme |            |  X         |            |
+| Plugins, anything else          | X          |            |            |
+| HB Game, Utility, Emus under 300MBs | X          |            |            |
+| ANY HB Game, Utility, Emus over 300MBs| | X     |      |           |
 
 ## Languages
 

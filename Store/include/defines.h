@@ -36,6 +36,7 @@
 #include <orbisPad.h>
 #include <orbis/libkernel.h>
 #include <orbis/Sysmodule.h>
+//#include <libkernel.h>
 #include "dialog.h"
 #endif
 
@@ -45,7 +46,7 @@ enum Settings_options
     TMP_SETTING,
     REFRESH_DB_SETTING,
     INI_SETTING,
-    FNT_SETTING,
+    LOAD_CACHE_ICONS,
     AUTO_INSTALL_SETTING,
     CLEAR_CACHE_SETTING,
     LEGACY_INSTALL_PROG,
@@ -101,7 +102,7 @@ int32_t netInit(void);
 
 
 #define VERSION_MAJOR 2
-#define VERSION_MINOR 04
+#define VERSION_MINOR 05
 
 #define BUILD_YEAR_CH0 (__DATE__[ 7])
 #define BUILD_YEAR_CH1 (__DATE__[ 8])
@@ -311,8 +312,8 @@ int  thread_count_by_status(int req_status);
 int  thread_dispatch_index(void);
 
 #if defined(__ORBIS__)
-#define asset_path(x) "/mnt/sandbox/pfsmnt/"STORE_TID "-app0/assets/"x
-#define APP_PATH(x) "/user/app/NPXS39041/"x
+#define asset_path(x) "/mnt/sandbox/pfsmnt/" STORE_TID "-app0/assets/" x
+#define APP_PATH(x) "/user/app/NPXS39041/" x
 typedef struct OrbisGlobalConf
 {
 	OrbisPadConfig *confPad;
@@ -320,6 +321,6 @@ typedef struct OrbisGlobalConf
 }OrbisGlobalConf;
 #else // on linux
 
-#define APP_PATH(x) "./app_path/"x
-#define asset_path(x) "./assets/"x
+#define APP_PATH(x) "./app_path/" x
+#define asset_path(x) "./assets/" x
 #endif

@@ -88,16 +88,13 @@ struct bgft_init_params {
     size_t heapSize;
 };
 
-typedef struct install_args {
-    char* title_id;
-    char* path;
-    char* fname;
-    int task_id;
-    unsigned long size; 
-    void* bgft_heap;
-    dl_arg_t* l;
-    bool is_thread, delete_pkg;
-}install_args;
+struct install_args {
+    std::string title_id, fname, path; 
+    int task_id = -1;  
+    bool is_thread = false, delete_pkg = false; 
+    void* bgft_heap = nullptr;
+   dl_arg_t* l;
+};
 
 struct bgft_download_task_progress_info {
     unsigned int bits;
@@ -166,7 +163,7 @@ TYPE_CHECK_SIZE(struct pkg_header, SIZEOF_PKG_HEADER);
 
 
 bool app_inst_util_is_exists(const char* title_id, bool* exists);
-
+extern "C"{
 int sceBgftServiceDownloadStartTask(SceBgftTaskId taskId);
 int sceBgftServiceDownloadStartTaskAll(void);
 int sceBgftServiceDownloadPauseTask(SceBgftTaskId taskId);
@@ -194,4 +191,5 @@ int sceBgftServiceInit(struct bgft_init_params*  params);
 int sceBgftServiceIntDownloadRegisterTaskByStorageEx(struct bgft_download_param_ex* params, int* task_id);
 int sceBgftServiceDownloadStartTask(int task_id);
 int sceBgftServiceTerm(void);
+}
 uint32_t pkginstall(const char *fullpath, dl_arg_t* ta, bool Auto_install);

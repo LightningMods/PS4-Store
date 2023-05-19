@@ -6,7 +6,6 @@
 #include "log.h"
 #include "lang.h"
 #include <sqlite3.h>
-#include <stdatomic.h>
 #include  "GLES2_common.h"
 #include "utils.h"
 
@@ -15,6 +14,10 @@
 #include "installpkg.h"
 #include <dialog.h>
 #endif
+
+#include <string>
+#include <atomic>
+#include <memory>
 
 #define DIM(x)  (sizeof(x)/sizeof(*(x)))
 #define KB(x)   ((size_t) (x) << 10)
@@ -38,7 +41,7 @@
 /*
 | OTHER SQL COMMANDS
 */
-#define SQL_COUNT "SELECT COUNT(*) FROM"DB_NAME
+#define SQL_COUNT "SELECT COUNT(*) FROM" DB_NAME
 // Supply a Number
 #define SQL_SELECT_ROW_BY_NUMB "SELECT * WHERE pid LIKE "
 // Supply a Number
@@ -138,7 +141,81 @@ typedef union SceNetCtlInfo {
 #define DAEMON_INI_DOESNT_EXIST 0
 #define PENDING_DOWNLOADS -999
 #define UNUSED(x) (void)(x)
+#define PKG_MAGIC   0x544E437Fu
+#define SFO_MAGIC   0x46535000u
+#define SFO_VERSION 0x0101u /* 1.1 */
+#define ES16(_val) \
+	((u16)(((((u16)_val) & 0xff00) >> 8) | \
+	       ((((u16)_val) & 0x00ff) << 8)))
+
+#define ES32(_val) \
+	((u32)(((((u32)_val) & 0xff000000) >> 24) | \
+	       ((((u32)_val) & 0x00ff0000) >> 8 ) | \
+	       ((((u32)_val) & 0x0000ff00) << 8 ) | \
+	       ((((u32)_val) & 0x000000ff) << 24)))
+
+#define ES64(_val) \
+	((u64)(((((u64)_val) & 0xff00000000000000ull) >> 56) | \
+	       ((((u64)_val) & 0x00ff000000000000ull) >> 40) | \
+	       ((((u64)_val) & 0x0000ff0000000000ull) >> 24) | \
+	       ((((u64)_val) & 0x000000ff00000000ull) >> 8 ) | \
+	       ((((u64)_val) & 0x00000000ff000000ull) << 8 ) | \
+	       ((((u64)_val) & 0x0000000000ff0000ull) << 24) | \
+	       ((((u64)_val) & 0x000000000000ff00ull) << 40) | \
+	       ((((u64)_val) & 0x00000000000000ffull) << 56)))
 //#define assert(expr) if (!(expr)) msgok(FATAL, "Assertion Failed!");
+#define u8 uint8_t
+#define u16 uint16_t
+#define u32 uint32_t
+#define u64 uint64_t
+#define s8 int8_t
+
+typedef struct sfo_header_s {
+	u32 magic;
+	u32 version;
+	u32 key_table_offset;
+	u32 data_table_offset;
+	u32 num_entries;
+} sfo_header_t;
+
+typedef struct sfo_index_table_s {
+	u16 key_offset;
+	u16 param_format;
+	u32 param_length;
+	u32 param_max_length;
+	u32 data_offset;
+} sfo_index_table_t;
+
+typedef struct sfo_param_params_s {
+	u32 unk1;
+	u32 user_id;
+	u8 unk2[32];
+	u32 unk3;
+	char title_id_1[0x10];
+	char title_id_2[0x10];
+	u32 unk4;
+	u8 chunk[0x3B0];
+} sfo_param_params_t;
+
+typedef struct sfo_context_param_s {
+	char *key;
+	u16 format;
+	u32 length;
+	u32 max_length;
+	size_t actual_length;
+	u8 *value;
+} sfo_context_param_t;
+
+typedef struct pkg_table_entry {
+	uint32_t id;
+	uint32_t filename_offset;
+	uint32_t flags1;
+	uint32_t flags2;
+	uint32_t offset;
+	uint32_t size;
+	uint64_t padding;
+} pkg_table_entry_t;
+
 
 enum Flag
 {
@@ -195,41 +272,43 @@ enum CHECK_OPTS
 #define SCE_SYSMODULE_INTERNAL_SYSUTIL 0x80000018
 
 // indexed options
-typedef struct
+struct StoreOptions
 {
-    char *opt[ NUM_OF_STRINGS ];
-    atomic_bool auto_install, Legacy_Install;
-    int lang;
+    std::vector<std::string> opt;
+    std::atomic_bool auto_install{true}, Legacy_Install{false};
+    int lang = 0;
     // more options
-} StoreOptions;
+    bool auto_load_cache = false;
+};
 
 // the Settings
 extern StoreOptions set,
 * get;
  
-bool LoadOptions(StoreOptions *set);
-bool SaveOptions(StoreOptions *set);
+bool LoadOptions();
+bool SaveOptions();
 
 bool Keyboard(const char* Title, const char* initialTextBuffer, char* out_buffer, bool is_url);
 char* StoreKeyboard(const char* Title, char* initialTextBuffer);
 int sceMsgDialogTerminate();
-void CheckUpdate(const char* tid, item_t *li);
-
+void CheckUpdate(const char* tid, item_t &li);
+extern std::atomic<int>  updates_counter;
 // sysctl
 uint32_t SysctlByName_get_sdk_version(void);
 
-char *calculateSize(uint64_t size);
-
+std::string calculateSize(uint64_t size);
 extern bool is_connected_app;
-void  msgok(enum MSG_DIALOG level, const char* format, ...);
-void  loadmsg(const char* format, ...);
+void msgok(enum MSG_DIALOG level, std::string str);
+void  loadmsg(std::string format);
 void drop_some_icon0();
-long CalcAppsize(char *path);
+uint64_t CalcAppsize(std::string path);
 char* cutoff(const char* str, int from, int to);
-bool touch_file(char* destfile);
-int sql_index_tokens(layout_t* l, int count);
+bool touch_file(const char* destfile);
+bool GetInstalledVersion(std::string tid, std::string& version);
+std::string normalize_version(const std::string &version);
+int sql_index_tokens(std::shared_ptr<layout_t>  &l, int count);
 
-
+extern "C" {
 void* syscall1(
 	uint64_t number,
 	void* arg1
@@ -264,21 +343,30 @@ void* syscall5(
 	void* arg4,
 	void* arg5
 );
+}
+
+enum online_check_t {
+    ONLINE_CHECK_FOR_VIEW = 0,
+    ONLINE_CHECK_FOR_STARTUP,
+    DONT_CHECK_FOR_UPDATES
+};
+
 void trigger_dump_frame();
 void print_memory();
 void dump_frame(void);
 int getjson(int Pagenumb, char* cdn, bool legacy);
 bool MD5_hash_compare(const char* file1, const char* hash);
-void CheckUpdate(const char* tid, item_t *li);
-int copyFile(char* sourcefile, char* destfile);
-void ProgSetMessagewText(int prog, const char* fmt, ...);
+int copyFile(const char* sourcefile, const char* destfile);
+void ProgSetMessagewText(uint32_t prog, std::string fmt);
+int CheckforUpdates(online_check_t check);
 bool app_inst_util_uninstall_patch(const char* title_id, int* error);
 bool app_inst_util_uninstall_game(const char *title_id, int *error);
-char *check_from_url(const char *url_,  enum CHECK_OPTS opt, bool silent);
-int check_store_from_url(char* cdn, enum CHECK_OPTS opt);
-int check_download_counter(StoreOptions* set, char* title_id);
+std::string check_from_url(const std::string &url_, enum CHECK_OPTS opt, bool silent);
+int check_store_from_url(const std::string cdn, CHECK_OPTS opt);
+int check_download_counter(std::string title_id);
 bool rmtree(const char path[]);
 void setup_store_assets(StoreOptions* get);
+void ORBIS_DrawControls( float x, float y);
 void refresh_apps_for_cf(enum SORT_APPS_BY op);
 int64_t sys_dynlib_load_prx(char* prxPath, int* moduleID);
 int64_t sys_dynlib_unload_prx(int64_t prxID);
@@ -302,12 +390,17 @@ extern char* title[300];
 extern char* title_id[30]; 
 
 void SIG_Handler(int sig_numb);
-const char* Language_GetName(int m_Code);
+std::string Language_GetName(int m_Code);
 unsigned int usbpath();
-int progstart(char* format, ...);
+int progstart(std::string format);
 void loadModulesVanilla();
 int number_of_iapps(const char *path);
 bool init_curl();
-int syscall_alt(long num, ...);
+extern "C" int syscall_alt(long num, ...);
 void* prx_func_loader(const char* prx_path, const char* symbol);
-bool pingtest(const char* server);
+
+
+#define YES 1
+#define NO  2
+int Confirmation_Msg(std::string msgr);
+int options_dialog(std::string msg, std::string op1, std::string op2);

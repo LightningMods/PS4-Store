@@ -7,12 +7,12 @@ CONTENT_ID  := IV0002-NPXS39041_00-STOREUPD00000000
 
 # Libraries linked into the ELF.
 LIBS        := -luser_mem_sys -lc++ -lz -ljbc -lc -lkernel  -lcurl  -lpolarssl -lSceVideoOut -lSceNet -lSceSysmodule -lSceAudioOut -lSceUserService -lScePigletv2VSH -lSceSysmodule -lSceFreeType \
-               -lScePad -lSceSystemService -lSceNet -lSceSsl -lSceHttp  -lSDL2  -lSceCommonDialog -lSceMsgDialog -lstore_api \
+               -lScePad -lSceSystemService -lSceNet -lSceSsl -lSceHttp  -lSDL2  -lSceCommonDialog -lSceMsgDialog \
                -lorbisGl -lorbisGl2 -lorbisPad -lpng -lSceImeDialog -lSceIme -lSceBgft -lSceAppInstUtil -lSceLibcInternal -lfreetype-gl -lsqlite -lSceLncUtil
 
 
 # Additional compile flags.
-EXTRAFLAGS  := -Wall -Wno-int-to-pointer-cast -Werror -Wno-for-loop-analysis -fcolor-diagnostics -Wall -D__ORBIS__ -D__PS4__
+EXTRAFLAGS  := -Wall -DFMT_HEADER_ONLY  -fexceptions -frtti  -Wno-int-to-pointer-cast -Wno-c++11-narrowing -Werror -Wno-for-loop-analysis -fcolor-diagnostics -Wall -D__ORBIS__ -D__PS4__
 
 # Asset and module directories.
 LIBMODULES  :=  $(shell find sce_module -type f -name '*.*')

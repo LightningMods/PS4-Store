@@ -4,10 +4,15 @@
 #include <time.h>
 /// from demo-font.c
 #include <freetype-gl.h>
-#include "net.h"
 #ifdef __ORBIS__
 #include <store_api.h>
 #endif
+#include <string>
+#include <vector>
+#include "fmt/format.h"
+#include <atomic>
+#include <memory>
+#include "classes.hpp"
 // freetype-gl pass last composed Text_Length in pixel, we use to align text!
 // from json_simple.c
 
@@ -39,7 +44,17 @@ enum SH_type
     NUM_OF_PROGRAMS
 };
 
-typedef struct
+struct item_idx_t
+{
+	std::string off;
+	bool is_active = false;
+	int len = 0;
+};
+
+#include "net.h"
+
+
+struct page_item_t
 {
     item_idx_t token[NUM_OF_USER_TOKENS]; // indexed tokens from json_data
     ivec2      token_i[NUM_OF_USER_TOKENS]; // enough for indexing all tokens, in ft-gl VBO
@@ -50,31 +65,32 @@ typedef struct
     // 5x3
     vec2       pen;
     char       in_atlas;
-} page_item_t;
+};
 
 
 // the single page holds its infos
-typedef struct
+struct page_info_t
 {
     // max NUM_OF_TEXTURES per page, max 8 items
     int  num_of_items;
     // each page will hold its json_data
     char* json_data;
     // and its ft-gl vertex buffer
-    vertex_buffer_t* vbo;
+    //vertex_buffer_t* vbo;
+    VertexBuffer vbo;
     // all indexed tokens, per item... (zerocopy, eh)
     page_item_t  item[NUM_OF_TEXTURES];
     // from 1, refrect json num in filename
     int page_num;
-} page_info_t;
+};
 
 
-typedef struct
+struct entry_tt
 {
     char* name;
-} entry_t;
+};
 
-typedef enum pt_status
+enum pt_status
 {
     CANCELED = -1,
     READY,
@@ -82,8 +98,8 @@ typedef enum pt_status
     RUNNING,
     COMPLETED,
     INSTALLING_APP
-} pt_status;
-typedef enum vbo_status
+};
+enum vbo_status
 {
     EMPTY,
     APPEND,
@@ -92,15 +108,15 @@ typedef enum vbo_status
     IN_ATLAS,
     IN_ATLAS_APPEND,
     IN_ATLAS_CLOSED
-} vbo_status;
+};
 
-typedef enum badge_t
+enum badge_t
 {
     AVAILABLE = 1,
     SOON,
     SELECTED,
     NUM_OF_BADGES
-} badge_t;
+};
 
 #define ORBIS_LIBC_MALLOC_MANAGED_SIZE_VERSION (0x0001U)
 /*	unsigned short sz;
@@ -140,49 +156,109 @@ struct CVec
 };
 #define UPDATE_NOT_CHECKED -1
 #ifndef __ORBIS__
-typedef enum{
+enum update_ret{
+    APP_NOT_INSTALLED,
     UPDATE_FOUND,
     UPDATE_ERROR,
     NO_UPDATE,
-} update_ret;
+};
+#else
 #endif
-typedef struct
+
+//extern active_panel active_p;
+#include <mutex>
+#include <vector>
+#include <algorithm>
+struct item_t
 {
-    item_idx_t* token_d;  // data
-    update_ret  update_status; // update status
-    int         token_c; // count
+    std::atomic<update_ret>  update_status;
+    std::vector<item_idx_t> token_d;
+    int         token_c;
     bool        failed_dl;
-    bool        png_is_loaded; // whether the image is loaded
-    GLuint      texture;  // the item icon
-    // if the item icon is cached in atlas, use UV
-    vec4             uv;  // normalized p1, p2
-    enum badge_t  badge;  // 
-    bool interuptable; // whether the item is interuptable
+    bool        png_is_loaded;
+    std::atomic<GLuint>      texture;
+    vec4        uv;
+    badge_t     badge;
+    bool        interruptible;
+    bool        is_active;
 
-    // need to add index for texture atlas
-} item_t;
+    item_t() : update_status(static_cast<update_ret>(UPDATE_NOT_CHECKED)),
+               token_c(0), failed_dl(false), png_is_loaded(false), texture(GL_NULL),
+               interruptible(false), is_active(false) 
+    {
+        uv = {0, 0, 0, 0};
+    }
 
-typedef struct
+    // Custom copy constructor
+    item_t(const item_t& other) :  update_status(other.update_status.load()),
+                                   token_d(other.token_d),
+                                   token_c(other.token_c),
+                                   failed_dl(other.failed_dl),
+                                   png_is_loaded(other.png_is_loaded),
+                                   texture(other.texture.load()),
+                                   uv(other.uv),
+                                   badge(other.badge),
+                                   interruptible(other.interruptible),
+                                   is_active(other.is_active)
+    {
+    }
+
+    // Custom copy assignment operator
+    item_t& operator=(const item_t& other) {
+        if (this == &other) {
+            return *this;
+        }
+
+        update_status.store(other.update_status.load());
+        token_d = other.token_d;
+        token_c = other.token_c;
+        failed_dl = other.failed_dl;
+        png_is_loaded = other.png_is_loaded;
+        texture = other.texture.load();
+        uv = other.uv;
+        badge = other.badge;
+        interruptible = other.interruptible;
+        is_active = other.is_active;
+
+        return *this;
+    }
+};
+
+
+struct layout_t
 {
-    vec4   bound_box; // total field size, in px
-    ivec2   fieldsize, // total field size, in items number
-        item_sel,  // current selected item into field
-        page_sel;  // page_selection: current, max page
-    int retries;       // check for what's used for and remove
-    // an array of items
-    item_t* item_d;    // item_data array
-    int     item_c,    // item_count
-        curr_item, // current selected item:
-        f_size,    // field size
-        f_sele;    // selected in field
-    vec4* f_rect;    // field rectangle array
+    vec4        bound_box;
+    ivec2       fieldsize,
+                item_sel,
+                page_sel;
+    int         retries;
+   std::vector<item_t> item_d;
+   //item_t* item_d = NULL;
+    int         item_c,
+                curr_item,
+                f_size,
+                f_sele;
+    std::vector<vec4> f_rect;
+
+    //vec4 f_rect;    // field rectangle array
     // each layout will hold its ft-gl vertex buffer object
-    vertex_buffer_t* vbo;
-    enum vbo_status  vbo_s; // vbo_status
-    // layout status
-    char   is_shown,
-        is_active; // to control selected_item (deprecated by active_p)
-} layout_t;
+    //vertex_buffer_t* vbo = NULL;
+    VertexBuffer vbo;
+    vbo_status   vbo_s;
+    bool is_shown, is_active;
+    std::recursive_mutex mtx;
+
+    layout_t() : retries(0), item_c(0), curr_item(0), f_size(0), f_sele(0),
+             vbo_s(EMPTY), is_shown(false), is_active(false)
+    {
+        bound_box = {0, 0, 0, 0};
+        fieldsize = {0, 0};
+        item_sel = {0, 0};
+        page_sel = {0, 0};
+    }
+};
+
+
 
 enum views
 {
@@ -233,24 +309,23 @@ enum views
 #define L2   ( 12)
 #endif
 
-extern item_idx_t* aux, * q; // aux and Search Query
+extern std::vector<item_idx_t> aux,  q; // aux and Search Query
 
 extern GLuint fallback_t;
 /*
     array for Special cases
 */
-extern item_t* games,
-* groups;
+extern std::vector<item_t> games,
+ groups;
 
 
 // for Settings (options_panel)
 extern bool use_reflection;
 
 // texts
-extern char* gm_p_text[5]; // 5
-extern char* new_panel_text[5][11];
+extern std::vector<std::vector<std::string>> new_panel_text;
 // posix threads args, for downloading
-extern dl_arg_t* pt_info;
+extern std::vector<dl_arg_t*> pt_info;
 
 void refresh_atlas(void);
 
@@ -261,7 +336,7 @@ void on_GLES2_Update1(double time);
 void on_GLES2_Init_icons(int view_w, int view_h);
 void on_GLES2_Update(double time);
 //void on_GLES2_Render_icons(int num);
-void on_GLES2_Render_icon(enum SH_type SL_program, GLuint texture, int num, vec4* frect, vec4* opt_uv);
+void on_GLES2_Render_icon(enum SH_type SL_program, GLuint texture, int num, vec4 &frect, vec4 *uv = nullptr);
 void on_GLES2_Final(void);
 void ORBIS_RenderSubMenu(int num);
 
@@ -273,40 +348,40 @@ void ftgl_render_vbo(vertex_buffer_t* vbo, vec3* offset);
 
 int initGL_for_the_store(bool reload_apps, int ref_pages);
 
-item_t* analyze_item_t_v2(item_t* items, int item_count);
-item_idx_t* search_item_t(item_t* items, int item_count, enum token_name TN, char* pattern);
+std::vector<item_t> analyze_item_t_v2(std::vector<item_t>& items, int numb);
+std::vector<item_idx_t> search_item_t(std::vector<item_t>& items, token_name TN, const std::string &pattern);
 item_t* index_items_from_dir(const char* dirpath, const char* dirpath2);
 
-void build_char_from_items(char** data, item_idx_t* filter);
-item_idx_t* build_item_list(item_t* items, int item_count, enum token_name TN);
+void build_char_from_items(std::vector<std::string>& data, const std::vector<item_idx_t>& filter);
+std::vector<item_idx_t> build_item_list(std::vector<item_t>& items, token_name TN);
 
 
 int index_token_from_sfo(item_t* item, char* path, int lang);
 
-void destroy_item_t(item_idx_t** p);
+void destroy_item_t(std::vector<item_idx_t> &p);
 
-int  df(char* out, const char* mountPoint);
+int df(std::string mountPoint, std::string &out);
 void get_stat_from_file(char* out, const char* filepath);
 
-int get_item_index(layout_t* l);
+int get_item_index(std::shared_ptr<layout_t>  &l);
 // from GLES2_scene_v2.c
-layout_t* GLES2_layout_init(int req_item_count);
+std::shared_ptr<layout_t>  GLES2_layout_init(int req_item_count);
 
-vertex_buffer_t* vbo_from_rect(vec4* rect);
+VertexBuffer vbo_from_rect(vec4 &rect);
 
-void GLES2_UpdateVboForLayout(layout_t* l);
-int layout_fill_item_from_list(layout_t* l, char** i_list);
+void GLES2_UpdateVboForLayout(std::shared_ptr<layout_t>  &l);
+int layout_fill_item_from_list(std::shared_ptr<layout_t>  &l, std::vector<std::string> &i_list);
 // from GLES2_scene.c
 void GLES2_scene_init(int w, int h);
 void GLES2_scene_render(const char* query);
 void GLES2_scene_on_pressed_button(int button);
-void X_action_dispatch(int action, layout_t *l);
+void X_action_dispatch(int action, std::shared_ptr<layout_t> &l);
 void layout_refresh_VBOs(void);
 void GLES2_Draw_common_texts(void);
 void GLES2_render_download_panel(void);
 void O_action_dispatch(void);
 void pixelshader_init(int width, int height);
-void pixelshader_render(GLuint program_i, vertex_buffer_t* vbo, vec2* req_size);
+void pixelshader_render();
 
 /// pthreads used in GLES2_q.c
 
@@ -324,7 +399,7 @@ col; // text fg
 extern ivec4  menu_pos;
 extern double u_t;
 
-extern const unsigned char completeVersion[];
+extern std::string completeVersion;
 
 void GLES2_Draw_sysinfo(void);
 void GLES2_refresh_sysinfo(void);
@@ -334,21 +409,21 @@ extern double dfp_hdd,
 dfp_ext,
 dfp_now;
 
-extern layout_t* active_p,     // the active panel moves selector around
-* icon_panel,
-* left_panel,
-* left_panel2,
-* option_panel,
-* download_panel,
-* queue_panel;
+extern std::shared_ptr<layout_t>  active_p,     // the active panel moves selector around
+ icon_panel,
+left_panel,
+left_panel2,
+option_panel,
+download_panel,
+queue_panel;
 
 // single item infos, for the page_info_t below
 // GLES2_layout
-void layout_update_fsize(layout_t* l);
-void layout_update_sele(layout_t* l, int movement);
+void layout_update_fsize(std::shared_ptr<layout_t>  &l);
+void layout_update_sele(std::shared_ptr<layout_t>  &l, int movement);
 void GLES2_Refresh_for_settings();
-void layout_set_active(layout_t* l);
-void GLES2_render_layout_v2(layout_t* l, int unused);
+void layout_set_active(std::shared_ptr<layout_t>  &l);
+void GLES2_render_layout_v2(std::shared_ptr<layout_t>  &l, int unused);
 
 void GLES2_render_list(int unused);
 void GLES2_render_paged_list(int unused);
@@ -360,7 +435,7 @@ void set_cmp_token(const int index);
 int struct_cmp_by_token(const void* a, const void* b);
 
 // used for Groups
-void recreate_item_t(item_t** items);
+void recreate_item_t(std::vector<item_t> &i);
 
 
 /// from shader-common.c
@@ -397,6 +472,7 @@ typedef struct {
 } RawImageData;
 
 typedef enum {
+    TEXTURE_LOAD_MAIN_MENU = -1,
     TEXTURE_LOAD_DEFAULT,
     TEXTURE_DOWNLOAD,
     TEXTURE_LOAD_PNG,
@@ -408,12 +484,13 @@ bool is_png_vaild(const char *relative_path);
 GLuint load_texture(const GLsizei width, const GLsizei height,
     const GLenum  type, const GLvoid* pixels);
 // higher level helper
-GLuint load_png_data_into_texture(const char* data, int size);
+GLuint load_png_data_into_texture(const unsigned char* data, int size);
 bool check_n_load_texture(const int idx, texture_load_status_t status);
 extern vec2 tex_size; // last loaded png size as (w, h)
-int writeImage(char* filename, int width, int height, int* buffer, char* title);
+int writeImage(char* filename, int width, int height, int* buffer, const char* title);
 GLuint load_png_asset_into_texture(const char* relative_path);
-void Install_View(layout_t* l, const char* query_string, enum token_name nm);
+void Install_View(std::shared_ptr<layout_t>  &l, const char* query_string, enum token_name nm);
+void Update_View(std::shared_ptr<layout_t>  &l);
 
 /// from timing.c
 unsigned int get_time_ms(void);
@@ -451,21 +528,21 @@ void ORBIS_RenderFillRects_init(int width, int height);
 void ORBIS_RenderFillRects_rndr(void);
 void ORBIS_RenderFillRects_fini(void);
 void ORBIS_RenderDrawLines(const vec2* points, int count);
-void ORBIS_RenderFillRects(enum SH_type SL_program, const vec4* rgba, const vec4* rects, int count);
-void ORBIS_RenderDrawBox(enum SH_type SL_program, const vec4* rgba, const vec4* rect);
-void GLES2_DrawFillingRect(vec4* frect, vec4* color, double* percentage);
-
+void ORBIS_RenderFillRects(enum SH_type SL_program, const vec4 &rgba, std::vector<vec4> &rects, int count);
+void ORBIS_RenderDrawBox(enum SH_type SL_program, const vec4 &rgba, vec4 &r);
+void GLES2_DrawFillingRect(std::vector<vec4> &r, vec4 &c, const double percentage);
+void ORBIS_RenderArrowAtCoords(enum SH_type SL_program, float x, float y);
 // from GLES2_ani.c
 // UI panels new way, v3
-vec4 get_rect_from_index(const int idx, const layout_t* l, vec4* io);
+vec4 get_rect_from_index(const int idx, const std::shared_ptr<layout_t>  &l, vec4* io);
 void buffer_to_off(item_t* ret, int index_t, char* str);
 
 
 /// from GLES2_badges
-int  scan_for_badges(layout_t* l, item_t* apps);
+int  scan_for_badges(std::shared_ptr<layout_t>  &l, item_t* apps);
 void GLES2_Init_badge(void);
 void GLES2_Render_badge(int idx, vec4* rect);
 
-void GLES2_render_queue(layout_t* l, int used);
+void GLES2_render_queue(std::shared_ptr<layout_t>  &l, int used);
 void glDeleteTextures1(int unused, GLuint* text);
 void GLES2_refresh_common(void);
