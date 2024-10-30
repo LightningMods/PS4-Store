@@ -68,6 +68,8 @@ static sqlite3* open_sqlite_db(const char* db_path)
 	if (sqlite3_open_v2(memuri, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, "memvfs") != SQLITE_OK)
 	{
 		log_debug("Error open memvfs: %s", sqlite3_errmsg(db));
+		sqlite3_close(db);  // Ensure any partially allocated db resources are freed
+                sqlite3_free(memuri);  // Also ensure memuri is freed before returning
 		return NULL;
 	}
 	sqlite3_free(memuri);
