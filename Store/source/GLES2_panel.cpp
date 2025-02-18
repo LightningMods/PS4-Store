@@ -226,7 +226,7 @@ std::vector<item_idx_t> search_item_t(std::vector<item_t>& items, token_name TN,
     }
 
     for (int i = 0; i < items[0].token_c; i++) {
-        if (TN == NAME || TN == PV || TN == AUTHOR) {
+        if (TN == NAME || TN == PV || TN == AUTHOR || TN == ID) {
            p = case_insensitive_search(items[i].token_d[TN].off, pattern);
            if (p != items[i].token_d[TN].off.end())  {
                 log_info("hit[%d]:%d %s %s", curr_count, i, items[i].token_d[TN].off.c_str(), p);
